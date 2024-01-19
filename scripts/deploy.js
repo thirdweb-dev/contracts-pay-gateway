@@ -7,27 +7,33 @@
 const hre = require("hardhat");
 
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const unlockTime = currentTimestampInSeconds + 60;
+  const signer = (await hre.ethers.getSigners())[0];
+  const lifiContractAddress = hre.network.config.lifiContractAddress;
 
-  const lockedAmount = hre.ethers.parseEther("0.001");
+  const feeBPS = BigInt(300); // 3% take
 
-  const lock = await hre.ethers.deployContract("Lock", [unlockTime], {
-    value: lockedAmount,
-  });
-
-  await lock.waitForDeployment();
-
-  console.log(
-    `Lock with ${ethers.formatEther(
-      lockedAmount
-    )}ETH and unlock timestamp ${unlockTime} deployed to ${lock.target}`
+  const ThirdwebPaymentsGateway = await hre.ethers.getContractFactory(
+    "ThirdwebPaymentsGateway"
   );
+  const thirdwebPaymentsGateway = await ThirdwebPaymentsGateway.deploy(
+    signer.address,
+    signer.address,
+    lifiContractAddress,
+    feeBPS
+  );
+
+  await thirdwebPaymentsGateway.waitForDeployment();
+
+  console.log(`====== Successfully Deployed! ======`);
+  console.log(`Deployed to: ${await thirdwebPaymentsGateway.getAddress()}`);
+  console.log(`On chain: ${hre.network.config.chainId}`);
 }
 
 // We recommend this pattern to be able to use async/await everywhere
 // and properly handle errors.
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
