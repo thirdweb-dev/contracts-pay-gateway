@@ -19,6 +19,8 @@ module.exports = {
       accounts: [PRIVATE_KEY],
       gasMultiplier: 2,
       lifiContractAddress: "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae",
+      deployedThirdwebGatewayAddress:
+        "0xB246b022df8cFd4a752dC058236Cc0A6abd02E3c",
       chainId: 137,
     },
     optimism: {
