@@ -4,8 +4,9 @@ pragma solidity ^0.8.22;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract ThirdwebPaymentsGateway is Ownable {
+contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
   event TransferStart(
     bytes32 indexed clientId,
@@ -57,6 +58,11 @@ contract ThirdwebPaymentsGateway is Ownable {
     return feeAmount;
   }
 
+
+
+  /* 
+    TODO: consider the error case where a user puts in a nonpayable address - transaction fails
+  */
   function _distributeFees(
     address tokenAddress,
     uint256 tokenAmount,
@@ -104,7 +110,7 @@ contract ThirdwebPaymentsGateway is Ownable {
     PayoutInfo[] calldata payouts,
     address payable forwardAddress,
     bytes calldata data
-  ) external payable {
+  ) external payable nonReentrant {
     require(tokenAmount > 0, "token amount must be greater than zero");
 
     emit TransferStart(
