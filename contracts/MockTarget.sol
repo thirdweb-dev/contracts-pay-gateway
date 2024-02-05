@@ -28,7 +28,7 @@ contract MockTarget {
   ) private {
     emit TargetLog(sender, receiver, tokenAddress, tokenAmount, message);
     console.log(
-      "Transferring %s erc20 tokens from %s to %s", amount, sender, receiver
+      "Transferring %s erc20 tokens from %s to %s", tokenAmount, sender, receiver
     );
 
     require(IERC20(tokenAddress).transferFrom(msg.sender, receiver, tokenAmount), "Token transfer failed");
@@ -43,7 +43,7 @@ contract MockTarget {
   ) private {
     emit TargetLog(sender, receiver, tokenAddress, tokenAmount, message);
     console.log(
-      "Transferring %s native tokens from %s to %s", amount, sender, receiver
+      "Transferring %s native tokens from %s to %s", tokenAmount, sender, receiver
     );
     (bool sent, ) = receiver.call{value: msg.value}("");
     require(sent, "Failed to send Ether");
