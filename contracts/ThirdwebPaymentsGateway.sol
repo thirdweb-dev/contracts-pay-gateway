@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
   Requirements
   - easily change fee / payout structure per transaction
   - easily change provider per transaction
-  
+
   TODO: 
     - add receiver function
     - add thirdweb signer for tamperproofing
@@ -93,7 +93,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     uint256 amount,
     uint256 feeBPS
   ) private pure returns (uint256) {
-    uint256 feeAmount = (amount * feeBPS) / 10000;
+    uint256 feeAmount = (amount * feeBPS) / 10_000;
     return feeAmount;
   }
 
@@ -131,7 +131,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
       else 
       {
         require(
-          IERC20(tokenAddress).transferFrom(address(this), payouts[payeeIdx].payoutAddress, feeAmount),
+          IERC20(tokenAddress).transferFrom(msg.sender, payouts[payeeIdx].payoutAddress, feeAmount),
           "Token Fee Transfer Failed"
         );
       }
@@ -165,15 +165,6 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
       tokenAmount
     );
 
-    // pull user funds
-    if(_isTokenERC20(tokenAddress))
-    {
-      require(
-        IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount),
-        "Failed to pull user erc20 funds"
-      );
-    }
-
     // distribute fees
     uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, payouts);
 
@@ -187,8 +178,14 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
     if(_isTokenERC20(tokenAddress))
     {
+      // pull user funds
       require(
-        IERC20(tokenAddress).approve(forwardAddress, tokenAmount - totalFeeAmount),
+        IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount),
+        "Failed to pull user erc20 funds"
+      );
+      
+      require(
+        IERC20(tokenAddress).approve(forwardAddress, tokenAmount),
         "Failed to approve forwarder"
       );
     }
