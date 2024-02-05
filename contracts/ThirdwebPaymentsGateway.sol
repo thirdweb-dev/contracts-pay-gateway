@@ -6,111 +6,144 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract ThirdwebPaymentsGateway is Ownable {
-    event NativeTransferStart(
-        string indexed clientId,
-        string transactionId,
-        address indexed sender
+
+  event TransferStart(
+    bytes32 indexed clientId,
+    address indexed sender,
+    string transactionId,
+    address tokenAddress,
+    uint256 tokenAmount
+  );
+
+  /**
+    Note: not sure if this is completely necessary
+    estimate the gas on this and remove
+    we could always combine transferFrom logs w/ this transaction
+    where from=Address(this) => to != provider
+    */
+  event FeePayout(
+    bytes32 indexed clientId,
+    address indexed sender,
+    address payoutAddress,
+    address tokenAddress,  
+    uint256 feeAmount,
+    uint256 feeBPS
+  );
+
+  struct PayoutInfo {
+    bytes32 clientId;
+    address payable payoutAddress;
+    uint256 feeBPS;
+  }
+
+  address constant private THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
+  address constant private NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
+
+  constructor(address _contractOwner) Ownable(_contractOwner) {}
+
+  function _isTokenERC20(address tokenAddress) pure private returns (bool) {
+    return tokenAddress != NATIVE_TOKEN_ADDRESS;
+  }
+
+  function _isTokenNative(address tokenAddress) pure private returns (bool) {
+    return tokenAddress == NATIVE_TOKEN_ADDRESS;
+  }
+
+  function _calculateFee(
+    uint256 amount,
+    uint256 feeBPS
+  ) private pure returns (uint256) {
+    uint256 feeAmount = (amount * feeBPS) / 10000;
+    return feeAmount;
+  }
+
+  function _distributeFees(
+    address tokenAddress,
+    uint256 tokenAmount,
+    PayoutInfo[] calldata payouts
+  ) private returns (uint256) {
+
+    uint256 totalFeeAmount = 0;
+
+    for(uint32 payeeIdx = 0; payeeIdx < payouts.length; payeeIdx++)
+    {
+      uint256 feeAmount = _calculateFee(tokenAmount, payouts[payeeIdx].feeBPS);
+      totalFeeAmount += feeAmount;
+
+      emit FeePayout(
+        payouts[payeeIdx].clientId, 
+        msg.sender, 
+        payouts[payeeIdx].payoutAddress,
+        tokenAddress,
+        feeAmount,
+        payouts[payeeIdx].feeBPS
+      );
+      if(_isTokenNative(tokenAddress))
+      {
+        (bool sent, ) = payouts[payeeIdx].payoutAddress.call{ value: feeAmount }("");
+        require(sent, "Failed to distribute fees");
+      }
+      else 
+      {
+        require(
+          IERC20(tokenAddress).transferFrom(address(this), payouts[payeeIdx].payoutAddress, feeAmount),
+          "Token Fee Transfer Failed"
+        );
+      }
+    }
+
+    require(totalFeeAmount < tokenAmount, "fees exceeded tokenAmount");
+    return totalFeeAmount;
+  }
+
+  function startTransfer(
+    bytes32 clientId,
+    string calldata transactionId,
+    address tokenAddress,
+    uint256 tokenAmount,
+    PayoutInfo[] calldata payouts,
+    address payable forwardAddress,
+    bytes calldata data
+  ) external payable {
+    require(tokenAmount > 0, "token amount must be greater than zero");
+
+    emit TransferStart(
+      clientId,
+      msg.sender,
+      transactionId,
+      tokenAddress,
+      tokenAmount
     );
-    event ERC20TransferStart(
-        string indexed clientId,
-        string transactionId,
-        address indexed sender,
-        address token,
-        uint256 amount
-    );
 
-    address payable private payoutAddress;
-    address payable private lifiContractAddress;
-    uint256 private feeBPS;
-
-    constructor(
-        address _contractOwner,
-        address payable _payoutAddress,
-        address payable _lifiContractAddress,
-        uint256 _feeBPS
-    ) Ownable(_contractOwner) {
-        payoutAddress = _payoutAddress;
-        lifiContractAddress = _lifiContractAddress;
-        feeBPS = _feeBPS;
+    // pull user funds
+    if(_isTokenERC20(tokenAddress))
+    {
+      require(
+        IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount),
+        "Failed to pull user erc20 funds"
+      );
     }
 
-    function setPayoutAddress(
-        address payable _payoutAddress
-    ) external onlyOwner {
-        payoutAddress = _payoutAddress;
+    // distribute fees
+    uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, payouts);
+
+    // determine native value to send
+    uint256 sendValue = msg.value;
+    if(_isTokenNative(tokenAddress))
+    {
+      sendValue = msg.value - totalFeeAmount;
+      require(sendValue <= msg.value, "send value cannot exceed msg value");
     }
 
-    function setFee(uint256 _feeBPS) external onlyOwner {
-        feeBPS = _feeBPS;
+    if(_isTokenERC20(tokenAddress))
+    {
+      require(
+        IERC20(tokenAddress).approve(forwardAddress, tokenAmount - totalFeeAmount),
+        "Failed to approve forwarder"
+      );
     }
 
-    function _calculateFee(
-        uint256 _amount,
-        uint256 _feeBPS
-    ) private pure returns (uint256) {
-        uint256 fee = (_amount * _feeBPS) / 10000;
-        return fee;
-    }
-
-    function nativeTransfer(
-        string calldata clientId,
-        string calldata transactionId,
-        bytes calldata data
-    ) external payable {
-        require(msg.value > 0, "No ether sent");
-
-        emit NativeTransferStart(clientId, transactionId, msg.sender);
-
-        uint256 fee = _calculateFee(msg.value, feeBPS);
-
-        (bool sent, ) = payoutAddress.call{value: fee}("");
-        require(sent, "Failed to send ether");
-
-        (bool success, ) = lifiContractAddress.call{value: msg.value - fee}(
-            data
-        );
-        require(success, "Forward failed");
-    }
-
-    function erc20Transfer(
-        string calldata clientId,
-        string calldata transactionId,
-        address tokenAddress,
-        uint256 tokenAmount,
-        bytes calldata data
-    ) external payable {
-        require(tokenAmount > 0, "Amount must be greater than zero");
-
-        emit ERC20TransferStart(
-            clientId,
-            transactionId,
-            msg.sender,
-            tokenAddress,
-            tokenAmount
-        );
-
-        IERC20 token = IERC20(tokenAddress);
-
-        uint256 fee = _calculateFee(tokenAmount, feeBPS); // make sure floor
-
-        require(
-            token.transferFrom(msg.sender, payoutAddress, fee),
-            "Token Fee Transfer Failed"
-        );
-
-        uint256 amountAfterFee = tokenAmount - fee;
-
-        require(
-            token.transferFrom(msg.sender, address(this), amountAfterFee),
-            "Token Transfer Failed"
-        );
-
-        require(
-            token.approve(lifiContractAddress, amountAfterFee),
-            "Token Approval Failed"
-        );
-
-        (bool success, ) = lifiContractAddress.call{value: msg.value}(data);
-        require(success, "Forward failed");
-    }
+    (bool success, ) = forwardAddress.call{value: msg.value}(data);
+    require(success, "Failed to forward");
+  }
 }
