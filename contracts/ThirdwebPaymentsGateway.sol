@@ -6,6 +6,15 @@ import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+/**
+  Requirements
+  - easily change fee / payout structure per transaction
+  - easily change provider per transaction
+
+
+ */
+
+
 contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
   event TransferStart(
@@ -41,6 +50,27 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
   address constant private NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
 
   constructor(address _contractOwner) Ownable(_contractOwner) {}
+
+
+  /* some bridges may refund need a way to get funds back to user */
+  function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public onlyOwner nonReentrant
+  {
+    if(_isTokenERC20(tokenAddress))
+    {
+      require(
+        IERC20(tokenAddress).transferFrom(address(this), receiver, tokenAmount),
+        "Failed to withdraw funds"
+      );
+    } else {
+      (bool sent, ) = receiver.call{ value: tokenAmount }("");
+      require(sent, "Failed to withdraw funds");
+    }
+  }
+
+  function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
+    withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
+  } 
+
 
   function _isTokenERC20(address tokenAddress) pure private returns (bool) {
     return tokenAddress != NATIVE_TOKEN_ADDRESS;
