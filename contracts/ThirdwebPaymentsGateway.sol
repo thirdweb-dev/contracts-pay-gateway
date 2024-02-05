@@ -10,16 +10,26 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
   Requirements
   - easily change fee / payout structure per transaction
   - easily change provider per transaction
-
-
+  
+  TODO: 
+    - add receiver function
+    - add thirdweb signer for tamperproofing
+    - add operator role automating withdrawals
  */
-
 
 contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
   event TransferStart(
     bytes32 indexed clientId,
     address indexed sender,
+    string transactionId,
+    address tokenAddress,
+    uint256 tokenAmount
+  );
+
+  event TransferEnd(
+    bytes32 indexed clientId,
+    address indexed receiver,
     string transactionId,
     address tokenAddress,
     uint256 tokenAmount
@@ -50,7 +60,6 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
   address constant private NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
 
   constructor(address _contractOwner) Ownable(_contractOwner) {}
-
 
   /* some bridges may refund need a way to get funds back to user */
   function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public onlyOwner nonReentrant
@@ -141,7 +150,12 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     address payable forwardAddress,
     bytes calldata data
   ) external payable nonReentrant {
+    // verify amount
     require(tokenAmount > 0, "token amount must be greater than zero");
+    if(_isTokenNative(tokenAddress))
+    {
+      require(msg.value >= tokenAmount, "msg value must be gte than token amount");
+    }
 
     emit TransferStart(
       clientId,
@@ -181,5 +195,41 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
     (bool success, ) = forwardAddress.call{value: msg.value}(data);
     require(success, "Failed to forward");
+  }
+
+  function endTransfer(
+    bytes32 clientId,
+    string calldata transactionId,
+    address tokenAddress, 
+    uint256 tokenAmount,
+    address payable receiverAddress
+  ) external payable nonReentrant {
+    require(tokenAmount > 0, "token amount must be greater than zero");
+
+    if(_isTokenNative(tokenAddress))
+    {
+      require(msg.value >= tokenAmount, "msg value must be gte token amount");
+    }
+
+    emit TransferEnd(
+      clientId,
+      receiverAddress,
+      transactionId,
+      tokenAddress,
+      tokenAmount
+    );
+
+    // pull user funds
+    if(_isTokenERC20(tokenAddress))
+    {
+      require(
+        IERC20(tokenAddress).transferFrom(msg.sender, receiverAddress, tokenAmount),
+        "Failed to forward erc20 funds"
+      );
+    }
+    else {
+      (bool success, ) = receiverAddress.call{value: tokenAmount }("");
+      require(success, "Failed to send to reciever");
+    }
   }
 }
