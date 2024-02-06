@@ -174,6 +174,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     {
       sendValue = msg.value - totalFeeAmount;
       require(sendValue <= msg.value, "send value cannot exceed msg value");
+      require(sendValue >= tokenAmount, "send value must cover tokenAmount");
     }
 
     if(_isTokenERC20(tokenAddress))
@@ -183,14 +184,14 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
         IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount),
         "Failed to pull user erc20 funds"
       );
-      
+
       require(
         IERC20(tokenAddress).approve(forwardAddress, tokenAmount),
         "Failed to approve forwarder"
       );
     }
 
-    (bool success, ) = forwardAddress.call{value: msg.value}(data);
+    (bool success, ) = forwardAddress.call{value: sendValue }(data);
     require(success, "Failed to forward");
   }
 
