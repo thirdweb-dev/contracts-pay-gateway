@@ -2,6 +2,8 @@ require("dotenv").config();
 const { PRIVATE_KEY } = process.env || null;
 
 require("@nomicfoundation/hardhat-toolbox");
+require("hardhat-gas-reporter");
+require("hardhat-contract-sizer");
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
@@ -30,5 +32,16 @@ module.exports = {
       lifiContractAddress: "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae",
       chainId: 10,
     },
+  },
+  contractSizer: {
+    alphaSort: true,
+    disambiguatePaths: false,
+    runOnCompile: true,
+    strict: true,
+    only: [":ThirdwebPaymentsGateway"],
+  },
+  gasReporter: {
+    currency: "USD",
+    enabled: true,
   },
 };
