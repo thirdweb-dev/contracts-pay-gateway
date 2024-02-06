@@ -4,7 +4,7 @@ const {
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("ThirdwebPaymentsGateway", function () {
+describe("Test Deployment", function () {
   async function deployContracts() {
     try {
       [owner, addr1, addr2, payoutAddress] = await ethers.getSigners();
@@ -24,12 +24,7 @@ describe("ThirdwebPaymentsGateway", function () {
         "ThirdwebPaymentsGateway"
       );
 
-      gateway = await ThirdwebPaymentsGateway.deploy(
-        owner.address,
-        payoutAddress.address,
-        await mockTarget.getAddress(),
-        300
-      );
+      gateway = await ThirdwebPaymentsGateway.deploy(owner.address);
       await gateway.waitForDeployment();
 
       return { gateway: gateway, erc20: mockERC20, target: mockTarget };

@@ -4,10 +4,18 @@ const {
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
+const {
+  getClientId,
+  convertClientIdToBytes32,
+  convertBytes32ToClientId,
+  getThirdwebClientId,
+  buildMockTargetCall,
+} = require("./utils");
+
 describe("ERC20 Transfer Tests", function () {
   async function deployContracts() {
     try {
-      [owner, clientFrom, clientTo] = await ethers.getSigners();
+      [owner, client, sender, receiver] = await ethers.getSigners();
 
       // Deploy erc20
       const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -24,19 +32,12 @@ describe("ERC20 Transfer Tests", function () {
         "ThirdwebPaymentsGateway"
       );
 
-      const feeBPS = BigInt(300);
-
-      // mint to client
+      // fund the sender
       const tokenAmount = ethers.parseEther("10.0");
-      const tx = await mockERC20.mint(clientFrom.address, tokenAmount);
+      const tx = await mockERC20.mint(sender.address, tokenAmount);
       await tx.wait();
 
-      gateway = await ThirdwebPaymentsGateway.deploy(
-        owner.address,
-        owner.address,
-        await mockTarget.getAddress(),
-        feeBPS
-      );
+      gateway = await ThirdwebPaymentsGateway.deploy(owner.address);
       await gateway.waitForDeployment();
 
       return {
@@ -44,10 +45,9 @@ describe("ERC20 Transfer Tests", function () {
         target: mockTarget,
         erc20: mockERC20,
         owner,
-        clientFrom,
-        clientTo,
-        tokenAmount,
-        feeBPS,
+        client,
+        sender,
+        receiver,
       };
     } catch (e) {
       console.log(e);
@@ -56,120 +56,175 @@ describe("ERC20 Transfer Tests", function () {
   }
 
   it("should successfully transfer erc20", async function () {
-    const {
-      gateway,
-      target,
-      owner,
-      erc20,
-      tokenAmount,
-      clientFrom,
-      clientTo,
-      feeBPS,
-    } = await loadFixture(deployContracts);
-    const txValue = ethers.parseEther("1.0");
-    const feeAmount = (txValue * feeBPS) / BigInt(10000);
+    const { gateway, target, owner, erc20, client, sender, receiver } =
+      await loadFixture(deployContracts);
+
+    // todo: move setup into fixture
+    const clientId = getClientId();
+    const clientIdBytes = convertClientIdToBytes32(clientId);
+    const twClientId = getThirdwebClientId();
+    const twClientIdBytes = convertClientIdToBytes32(twClientId);
+
+    const payouts = [
+      {
+        clientId: twClientIdBytes,
+        payoutAddress: owner.address,
+        feeBPS: BigInt(200), // 2%
+      },
+      {
+        clientId: clientIdBytes,
+        payoutAddress: client.address,
+        feeBPS: BigInt(100), // 1%
+      },
+    ];
+
+    const totalFeeBPS = payouts.reduce(
+      (acc, payee) => acc + payee.feeBPS,
+      BigInt(0)
+    );
+    const forwardAddress = await target.getAddress();
+    const sendValue = ethers.parseEther("1.0");
+    const sendValueWithFees =
+      sendValue + (sendValue * totalFeeBPS) / BigInt(10_000);
+
+    // build dummy forward call
     const transactionId = "tx1234";
-    const clientId = "client1234";
     const message = "Hello world!";
     const tokenAddress = await erc20.getAddress();
-    console.log(`TokenAddress: ${tokenAddress}`);
-
-    const data = target.interface.encodeFunctionData("performERC20Action", [
+    const data = buildMockTargetCall(
+      sender.address,
+      receiver.address,
       tokenAddress,
-      txValue - feeAmount,
-      clientTo.address,
-      message,
-    ]);
+      sendValue,
+      message
+    );
 
+    // trakc init balances
     const initialOwnerBalance = await erc20.balanceOf(owner.address);
-    const initialClientFromBalance = await erc20.balanceOf(clientFrom.address);
-    const initialClientToBalance = await erc20.balanceOf(clientTo.address);
+    const initialClientBalance = await erc20.balanceOf(client.address);
+    const initialSenderBalance = await erc20.balanceOf(sender.address);
+    const initialReceiverBalance = await erc20.balanceOf(receiver.address);
 
+    // approve tw gateway contract
     const approveTx = await erc20
-      .connect(clientFrom)
-      .approve(await gateway.getAddress(), txValue);
+      .connect(sender)
+      .approve(await gateway.getAddress(), sendValueWithFees);
     const approveReceipt = await approveTx.wait();
     expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
 
+    // send the transaction
     const tx = await gateway
-      .connect(clientFrom)
-      .erc20Transfer(clientId, transactionId, tokenAddress, txValue, data);
+      .connect(sender)
+      .startTransfer(
+        clientIdBytes,
+        transactionId,
+        tokenAddress,
+        sendValue,
+        payouts,
+        forwardAddress,
+        data
+      );
     const receipt = await tx.wait();
     expect(receipt, "transfer reverted").to.not.be.reverted;
 
+    // get balances after transfer
     const finalOwnerBalance = await erc20.balanceOf(owner.address);
-    const finalClientFromBalance = await erc20.balanceOf(clientFrom.address);
-    const finalClientToBalance = await erc20.balanceOf(clientTo.address);
-
-    // Calculate the expected fee and amount transferred to clientTo
-
-    const expectedClientToBalance =
-      initialClientToBalance + (txValue - feeAmount);
+    const finalClientBalance = await erc20.balanceOf(client.address);
+    const finalSenderBalance = await erc20.balanceOf(sender.address);
+    const finalReceiverBalance = await erc20.balanceOf(receiver.address);
 
     // Assert the balance changes
     expect(finalOwnerBalance).to.equal(
-      initialOwnerBalance + feeAmount,
+      initialOwnerBalance + (sendValue * payouts[0].feeBPS) / BigInt(10_000),
       "unexpected owner balance"
     );
-    expect(finalClientToBalance).to.equal(
-      expectedClientToBalance,
-      "unexpected toClient balance"
+
+    expect(finalClientBalance).to.equal(
+      initialClientBalance + (sendValue * payouts[1].feeBPS) / BigInt(10_000),
+      "unexpected client balance"
     );
-    expect(finalClientFromBalance).to.equal(
-      initialClientFromBalance - txValue,
-      "unexpected fromClient erc20 balance"
+
+    expect(finalSenderBalance).to.equal(
+      initialSenderBalance - sendValueWithFees,
+      "unexpected sender balance"
+    );
+    expect(finalReceiverBalance).to.equal(
+      initialReceiverBalance + sendValue,
+      "unexpected receiver balance"
     );
   });
 
-  it("should successfully emit the transfer event", async function () {
-    const {
-      gateway,
-      target,
-      owner,
-      erc20,
-      tokenAmount,
-      clientFrom,
-      clientTo,
-      feeBPS,
-    } = await loadFixture(deployContracts);
-    const txValue = ethers.parseEther("1.0");
-    const feeAmount = (txValue * feeBPS) / BigInt(10000);
+  it("should successfully emit events", async function () {
+    const { gateway, target, owner, erc20, client, sender, receiver } =
+      await loadFixture(deployContracts);
+
+    const clientId = getClientId();
+    const clientIdBytes = convertClientIdToBytes32(clientId);
+    const twClientId = getThirdwebClientId();
+    const twClientIdBytes = convertClientIdToBytes32(twClientId);
+
+    const payouts = [
+      {
+        clientId: twClientIdBytes,
+        payoutAddress: owner.address,
+        feeBPS: BigInt(200), // 2%
+      },
+      {
+        clientId: clientIdBytes,
+        payoutAddress: client.address,
+        feeBPS: BigInt(100), // 1%
+      },
+    ];
+
+    const totalFeeBPS = payouts.reduce(
+      (acc, payee) => acc + payee.feeBPS,
+      BigInt(0)
+    );
+    const forwardAddress = await target.getAddress();
+    const sendValue = ethers.parseEther("1.0");
+    const sendValueWithFees =
+      sendValue + (sendValue * totalFeeBPS) / BigInt(10_000);
+
+    // build dummy forward call
     const transactionId = "tx1234";
-    const clientId = "client1234";
     const message = "Hello world!";
     const tokenAddress = await erc20.getAddress();
-    console.log(`TokenAddress: ${tokenAddress}`);
-
-    const data = target.interface.encodeFunctionData("performERC20Action", [
+    const data = buildMockTargetCall(
+      sender.address,
+      receiver.address,
       tokenAddress,
-      txValue - feeAmount,
-      clientTo.address,
-      message,
-    ]);
+      sendValue,
+      message
+    );
 
+    // approve tw gateway contract
     const approveTx = await erc20
-      .connect(clientFrom)
-      .approve(await gateway.getAddress(), txValue);
+      .connect(sender)
+      .approve(await gateway.getAddress(), sendValueWithFees);
     const approveReceipt = await approveTx.wait();
     expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
 
+    // send the transaction
     await expect(
       gateway
-        .connect(clientFrom)
-        .erc20Transfer(clientId, transactionId, tokenAddress, txValue, data)
+        .connect(sender)
+        .startTransfer(
+          clientIdBytes,
+          transactionId,
+          tokenAddress,
+          sendValue,
+          payouts,
+          forwardAddress,
+          data
+        )
     )
-      .to.emit(gateway, "ERC20TransferStart")
+      .to.emit(gateway, "TransferStart")
       .withArgs(
-        clientId,
+        clientIdBytes,
+        sender.address,
         transactionId,
-        clientFrom.address,
         tokenAddress,
-        txValue
+        sendValue
       );
-
-    const filter = target.filters.LogMessage(); // Replace 'LogMessage' with the actual event name
-    const events = await target.queryFilter(filter);
-    expect(events.length).to.be.greaterThan(0);
-    expect(events[0].args.message).to.equal(message);
   });
 });
