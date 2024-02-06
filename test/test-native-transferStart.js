@@ -7,20 +7,14 @@ const { ethers } = require("hardhat");
 const {
   getClientId,
   convertClientIdToBytes32,
-  convertBytes32ToClientId,
   getThirdwebClientId,
   buildMockTargetCall,
 } = require("./utils");
 
-describe("ERC20 Transfer Tests", function () {
+describe("test:native:transferStart", function () {
   async function deployContracts() {
     try {
       [owner, client, sender, receiver] = await ethers.getSigners();
-
-      // Deploy erc20
-      const MockERC20 = await ethers.getContractFactory("MockERC20");
-      mockERC20 = await MockERC20.deploy("Mock Token", "MTK");
-      await mockERC20.waitForDeployment();
 
       // Deploy MockTarget
       const MockTarget = await ethers.getContractFactory("MockTarget");
@@ -32,18 +26,12 @@ describe("ERC20 Transfer Tests", function () {
         "ThirdwebPaymentsGateway"
       );
 
-      // fund the sender
-      const tokenAmount = ethers.parseEther("10.0");
-      const tx = await mockERC20.mint(sender.address, tokenAmount);
-      await tx.wait();
-
       gateway = await ThirdwebPaymentsGateway.deploy(owner.address);
       await gateway.waitForDeployment();
 
       return {
         gateway: gateway,
         target: mockTarget,
-        erc20: mockERC20,
         owner,
         client,
         sender,
@@ -55,8 +43,8 @@ describe("ERC20 Transfer Tests", function () {
     }
   }
 
-  it("should successfully transfer erc20", async function () {
-    const { gateway, target, owner, erc20, client, sender, receiver } =
+  it("should successfully transfer eth", async function () {
+    const { gateway, target, owner, client, sender, receiver } =
       await loadFixture(deployContracts);
 
     // todo: move setup into fixture
@@ -82,6 +70,7 @@ describe("ERC20 Transfer Tests", function () {
       (acc, payee) => acc + payee.feeBPS,
       BigInt(0)
     );
+
     const forwardAddress = await target.getAddress();
     const sendValue = ethers.parseEther("1.0");
     const sendValueWithFees =
@@ -90,48 +79,52 @@ describe("ERC20 Transfer Tests", function () {
     // build dummy forward call
     const transactionId = "tx1234";
     const message = "Hello world!";
-    const tokenAddress = await erc20.getAddress();
+
     const data = buildMockTargetCall(
       sender.address,
       receiver.address,
-      tokenAddress,
+      ethers.ZeroAddress,
       sendValue,
       message
     );
 
     // trakc init balances
-    const initialOwnerBalance = await erc20.balanceOf(owner.address);
-    const initialClientBalance = await erc20.balanceOf(client.address);
-    const initialSenderBalance = await erc20.balanceOf(sender.address);
-    const initialReceiverBalance = await erc20.balanceOf(receiver.address);
+    const initialOwnerBalance = await ethers.provider.getBalance(owner.address);
+    const initialClientBalance = await ethers.provider.getBalance(
+      client.address
+    );
+    const initialSenderBalance = await ethers.provider.getBalance(
+      sender.address
+    );
+    const initialReceiverBalance = await ethers.provider.getBalance(
+      receiver.address
+    );
 
-    // approve tw gateway contract
-    const approveTx = await erc20
-      .connect(sender)
-      .approve(await gateway.getAddress(), sendValueWithFees);
-    const approveReceipt = await approveTx.wait();
-    expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
-
-    // send the transaction
     const tx = await gateway
       .connect(sender)
       .startTransfer(
         clientIdBytes,
         transactionId,
-        tokenAddress,
+        ethers.ZeroAddress,
         sendValue,
         payouts,
         forwardAddress,
-        data
+        data,
+        { value: sendValueWithFees }
       );
     const receipt = await tx.wait();
     expect(receipt, "transfer reverted").to.not.be.reverted;
 
     // get balances after transfer
-    const finalOwnerBalance = await erc20.balanceOf(owner.address);
-    const finalClientBalance = await erc20.balanceOf(client.address);
-    const finalSenderBalance = await erc20.balanceOf(sender.address);
-    const finalReceiverBalance = await erc20.balanceOf(receiver.address);
+    const finalOwnerBalance = await ethers.provider.getBalance(owner.address);
+    const finalClientBalance = await ethers.provider.getBalance(client.address);
+    const finalSenderBalance = await ethers.provider.getBalance(sender.address);
+    const finalReceiverBalance = await ethers.provider.getBalance(
+      receiver.address
+    );
+
+    // get gas cost
+    const gasCost = receipt.gasUsed * receipt.gasPrice;
 
     // Assert the balance changes
     expect(finalOwnerBalance).to.equal(
@@ -145,7 +138,7 @@ describe("ERC20 Transfer Tests", function () {
     );
 
     expect(finalSenderBalance).to.equal(
-      initialSenderBalance - sendValueWithFees,
+      initialSenderBalance - sendValueWithFees - gasCost,
       "unexpected sender balance"
     );
     expect(finalReceiverBalance).to.equal(
@@ -154,10 +147,11 @@ describe("ERC20 Transfer Tests", function () {
     );
   });
 
-  it("should successfully emit events", async function () {
-    const { gateway, target, owner, erc20, client, sender, receiver } =
+  it("should successfully emit the transfer event", async function () {
+    const { gateway, target, owner, client, sender, receiver } =
       await loadFixture(deployContracts);
 
+    // todo: move setup into fixture
     const clientId = getClientId();
     const clientIdBytes = convertClientIdToBytes32(clientId);
     const twClientId = getThirdwebClientId();
@@ -180,6 +174,7 @@ describe("ERC20 Transfer Tests", function () {
       (acc, payee) => acc + payee.feeBPS,
       BigInt(0)
     );
+
     const forwardAddress = await target.getAddress();
     const sendValue = ethers.parseEther("1.0");
     const sendValueWithFees =
@@ -188,34 +183,27 @@ describe("ERC20 Transfer Tests", function () {
     // build dummy forward call
     const transactionId = "tx1234";
     const message = "Hello world!";
-    const tokenAddress = await erc20.getAddress();
+
     const data = buildMockTargetCall(
       sender.address,
       receiver.address,
-      tokenAddress,
+      ethers.ZeroAddress,
       sendValue,
       message
     );
 
-    // approve tw gateway contract
-    const approveTx = await erc20
-      .connect(sender)
-      .approve(await gateway.getAddress(), sendValueWithFees);
-    const approveReceipt = await approveTx.wait();
-    expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
-
-    // send the transaction
     await expect(
       gateway
         .connect(sender)
         .startTransfer(
           clientIdBytes,
           transactionId,
-          tokenAddress,
+          ethers.ZeroAddress,
           sendValue,
           payouts,
           forwardAddress,
-          data
+          data,
+          { value: sendValueWithFees }
         )
     )
       .to.emit(gateway, "TransferStart")
@@ -223,7 +211,7 @@ describe("ERC20 Transfer Tests", function () {
         clientIdBytes,
         sender.address,
         transactionId,
-        tokenAddress,
+        ethers.ZeroAddress,
         sendValue
       );
   });

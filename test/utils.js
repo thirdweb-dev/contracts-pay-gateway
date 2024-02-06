@@ -5,6 +5,7 @@ const getClientId = () => {
   return uuidv4();
 };
 
+// TODO: should probably zeroPadLeft
 const convertClientIdToBytes32 = (clientId) => {
   const originalBytes = Buffer.from(clientId.replace(/-/g, ""), "hex");
   const paddedBuffer = Buffer.alloc(32);
