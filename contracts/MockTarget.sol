@@ -51,7 +51,6 @@ contract MockTarget {
 
   fallback() external payable {
     require(msg.data.length > 0, "data required");
-    console.log("Received request!");
     (address sender, address receiver, 
       address tokenAddress, uint256 tokenAmount, 
       string memory message
