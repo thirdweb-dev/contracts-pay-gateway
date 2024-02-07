@@ -7,7 +7,8 @@ const { ethers } = require("hardhat");
 describe("Test Deployment", function () {
   async function deployContracts() {
     try {
-      [owner, addr1, addr2, payoutAddress] = await ethers.getSigners();
+      [owner, addr1, addr2, operator, payoutAddress] =
+        await ethers.getSigners();
 
       // Deploy MockERC20
       const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -24,7 +25,10 @@ describe("Test Deployment", function () {
         "ThirdwebPaymentsGateway"
       );
 
-      gateway = await ThirdwebPaymentsGateway.deploy(owner.address);
+      gateway = await ThirdwebPaymentsGateway.deploy(
+        owner.address,
+        operator.address
+      );
       await gateway.waitForDeployment();
 
       return { gateway: gateway, erc20: mockERC20, target: mockTarget };

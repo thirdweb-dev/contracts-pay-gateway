@@ -5,16 +5,18 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 const {
-  getClientId,
-  convertClientIdToBytes32,
+  getUUID,
+  convertUUIDToBytes32,
   getThirdwebClientId,
   buildMockTargetCall,
+  prepareAndSignData,
+  generateSignature,
 } = require("./utils");
 
 describe("test:erc20:transferStart", function () {
   async function deployContracts() {
     try {
-      [owner, client, sender, receiver] = await ethers.getSigners();
+      [owner, client, sender, operator, receiver] = await ethers.getSigners();
 
       // Deploy erc20
       const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -35,7 +37,10 @@ describe("test:erc20:transferStart", function () {
       const ThirdwebPaymentsGateway = await ethers.getContractFactory(
         "ThirdwebPaymentsGateway"
       );
-      gateway = await ThirdwebPaymentsGateway.deploy(owner.address);
+      gateway = await ThirdwebPaymentsGateway.deploy(
+        owner.address,
+        operator.address
+      );
       await gateway.waitForDeployment();
 
       return {
@@ -45,6 +50,7 @@ describe("test:erc20:transferStart", function () {
         owner,
         client,
         sender,
+        operator,
         receiver,
       };
     } catch (e) {
@@ -58,10 +64,9 @@ describe("test:erc20:transferStart", function () {
       await loadFixture(deployContracts);
 
     // todo: move setup into fixture
-    const clientId = getClientId();
-    const clientIdBytes = convertClientIdToBytes32(clientId);
+    const clientIdBytes = convertUUIDToBytes32(getUUID());
     const twClientId = getThirdwebClientId();
-    const twClientIdBytes = convertClientIdToBytes32(twClientId);
+    const twClientIdBytes = convertUUIDToBytes32(twClientId);
 
     const payouts = [
       {
@@ -86,7 +91,7 @@ describe("test:erc20:transferStart", function () {
       sendValue + (sendValue * totalFeeBPS) / BigInt(10_000);
 
     // build dummy forward call
-    const transactionId = "tx1234";
+    const transactionIdBytes = convertUUIDToBytes32(getUUID());
     const message = "Hello world!";
     const tokenAddress = await erc20.getAddress();
     const data = buildMockTargetCall(
@@ -110,17 +115,31 @@ describe("test:erc20:transferStart", function () {
     const approveReceipt = await approveTx.wait();
     expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
 
+    const signature = await prepareAndSignData(
+      operator,
+      {
+        clientIdBytes,
+        transactionIdBytes,
+        tokenAddress,
+        tokenAmount: sendValue,
+        forwardAddress,
+        data,
+      },
+      payouts
+    );
+
     // send the transaction
     const tx = await gateway
       .connect(sender)
       .startTransfer(
         clientIdBytes,
-        transactionId,
+        transactionIdBytes,
         tokenAddress,
         sendValue,
         payouts,
         forwardAddress,
-        data
+        data,
+        signature
       );
     const receipt = await tx.wait();
     expect(receipt, "transfer reverted").to.not.be.reverted;
@@ -153,13 +172,20 @@ describe("test:erc20:transferStart", function () {
   });
 
   it("should successfully emit events", async function () {
-    const { gateway, target, owner, erc20, client, sender, receiver } =
-      await loadFixture(deployContracts);
+    const {
+      gateway,
+      target,
+      owner,
+      erc20,
+      client,
+      sender,
+      operator,
+      receiver,
+    } = await loadFixture(deployContracts);
 
-    const clientId = getClientId();
-    const clientIdBytes = convertClientIdToBytes32(clientId);
+    const clientIdBytes = convertUUIDToBytes32(getUUID());
     const twClientId = getThirdwebClientId();
-    const twClientIdBytes = convertClientIdToBytes32(twClientId);
+    const twClientIdBytes = convertUUIDToBytes32(twClientId);
 
     const payouts = [
       {
@@ -184,7 +210,7 @@ describe("test:erc20:transferStart", function () {
       sendValue + (sendValue * totalFeeBPS) / BigInt(10_000);
 
     // build dummy forward call
-    const transactionId = "tx1234";
+    const transactionIdBytes = convertUUIDToBytes32(getUUID());
     const message = "Hello world!";
     const tokenAddress = await erc20.getAddress();
     const data = buildMockTargetCall(
@@ -202,27 +228,121 @@ describe("test:erc20:transferStart", function () {
     const approveReceipt = await approveTx.wait();
     expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
 
+    const signature = await prepareAndSignData(
+      operator,
+      {
+        clientIdBytes,
+        transactionIdBytes,
+        tokenAddress,
+        tokenAmount: sendValue,
+        forwardAddress,
+        data,
+      },
+      payouts
+    );
+
     // send the transaction
     await expect(
       gateway
         .connect(sender)
         .startTransfer(
           clientIdBytes,
-          transactionId,
+          transactionIdBytes,
           tokenAddress,
           sendValue,
           payouts,
           forwardAddress,
-          data
+          data,
+          signature
         )
     )
       .to.emit(gateway, "TransferStart")
       .withArgs(
         clientIdBytes,
         sender.address,
-        transactionId,
+        transactionIdBytes,
         tokenAddress,
         sendValue
       );
+  });
+
+  it("should fail for invalid operator", async function () {
+    const { gateway, target, owner, erc20, client, sender, receiver } =
+      await loadFixture(deployContracts);
+
+    // todo: move setup into fixture
+    const clientIdBytes = convertUUIDToBytes32(getUUID());
+    const twClientId = getThirdwebClientId();
+    const twClientIdBytes = convertUUIDToBytes32(twClientId);
+
+    const payouts = [
+      {
+        clientId: twClientIdBytes,
+        payoutAddress: owner.address,
+        feeBPS: BigInt(200), // 2%
+      },
+      {
+        clientId: clientIdBytes,
+        payoutAddress: client.address,
+        feeBPS: BigInt(100), // 1%
+      },
+    ];
+
+    const totalFeeBPS = payouts.reduce(
+      (acc, payee) => acc + payee.feeBPS,
+      BigInt(0)
+    );
+    const forwardAddress = await target.getAddress();
+    const sendValue = ethers.parseEther("1.0");
+    const sendValueWithFees =
+      sendValue + (sendValue * totalFeeBPS) / BigInt(10_000);
+
+    // build dummy forward call
+    const transactionIdBytes = convertUUIDToBytes32(getUUID());
+    const message = "Hello world!";
+    const tokenAddress = await erc20.getAddress();
+    const data = buildMockTargetCall(
+      sender.address,
+      receiver.address,
+      tokenAddress,
+      sendValue,
+      message
+    );
+
+    // approve tw gateway contract
+    const approveTx = await erc20
+      .connect(sender)
+      .approve(await gateway.getAddress(), sendValueWithFees);
+    const approveReceipt = await approveTx.wait();
+    expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
+
+    const signature = await prepareAndSignData(
+      sender,
+      {
+        clientIdBytes,
+        transactionIdBytes,
+        tokenAddress,
+        tokenAmount: sendValue,
+        forwardAddress,
+        data,
+      },
+      payouts
+    );
+
+    // send the transaction
+    await expect(
+      gateway
+        .connect(sender)
+        .startTransfer(
+          clientIdBytes,
+          transactionIdBytes,
+          tokenAddress,
+          sendValue,
+          payouts,
+          forwardAddress,
+          data,
+          signature
+        )
+    ).to.be.revertedWith("failed to verify transaction");
   });
 });

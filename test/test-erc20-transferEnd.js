@@ -4,12 +4,12 @@ const {
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-const { getClientId, convertClientIdToBytes32 } = require("./utils");
+const { getUUID, convertUUIDToBytes32 } = require("./utils");
 
 describe("test:erc20:transferEnd", function () {
   async function deployContracts() {
     try {
-      [owner, client, sender, receiver] = await ethers.getSigners();
+      [owner, client, sender, operator, receiver] = await ethers.getSigners();
 
       // Deploy erc20
       const MockERC20 = await ethers.getContractFactory("MockERC20");
@@ -26,7 +26,10 @@ describe("test:erc20:transferEnd", function () {
         "ThirdwebPaymentsGateway"
       );
 
-      gateway = await ThirdwebPaymentsGateway.deploy(owner.address);
+      gateway = await ThirdwebPaymentsGateway.deploy(
+        owner.address,
+        operator.address
+      );
       await gateway.waitForDeployment();
 
       return {
@@ -49,8 +52,7 @@ describe("test:erc20:transferEnd", function () {
     );
 
     // todo: move setup into fixture
-    const clientId = getClientId();
-    const clientIdBytes = convertClientIdToBytes32(clientId);
+    const clientIdBytes = convertUUIDToBytes32(getUUID());
     const tokenAddress = await erc20.getAddress();
     const sendValue = ethers.parseEther("1.0");
 
@@ -59,7 +61,7 @@ describe("test:erc20:transferEnd", function () {
     const initialSenderBalance = await erc20.balanceOf(sender.address);
     const initialReceiverBalance = await erc20.balanceOf(receiver.address);
 
-    const transactionId = "tx1234";
+    const transactionId = convertUUIDToBytes32("");
 
     // approve tw gateway contract
     const approveTx = await erc20
@@ -107,12 +109,11 @@ describe("test:erc20:transferEnd", function () {
       deployContracts
     );
 
-    const clientId = getClientId();
-    const clientIdBytes = convertClientIdToBytes32(clientId);
+    const clientIdBytes = convertUUIDToBytes32(getUUID());
 
     const sendValue = ethers.parseEther("1.0");
     const tokenAddress = await erc20.getAddress();
-    const transactionId = "tx1234";
+    const transactionId = convertUUIDToBytes32(getUUID());
 
     // approve tw gateway contract
     const approveTx = await erc20

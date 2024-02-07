@@ -1,22 +1,64 @@
+const { solidityPackedKeccak256, hashMessage } = require("ethers");
 const { ethers } = require("hardhat");
 const uuidv4 = require("uuid").v4;
 
-const getClientId = () => {
+const getUUID = () => {
   return uuidv4();
 };
 
+async function generateSignature(operator, dataToSign) {
+  const signature = await operator.signMessage(
+    ethers.utils.arrayify(dataToSign)
+  );
+  return signature;
+}
+
+function hashPayouts(payouts) {
+  let payoutHash = ethers.id("PayoutInfo");
+  payouts.forEach((payout) => {
+    payoutHash = ethers.solidityPackedKeccak256(
+      ["bytes32", "bytes32", "address", "uint256"],
+      [payoutHash, payout.clientId, payout.payoutAddress, payout.feeBPS]
+    );
+  });
+  return payoutHash;
+}
+
+async function prepareAndSignData(operator, params, payouts) {
+  const payoutsHash = hashPayouts(payouts);
+
+  const dataToHash = ethers.solidityPackedKeccak256(
+    ["bytes32", "bytes32", "address", "uint256", "bytes32", "address", "bytes"],
+    [
+      params.clientIdBytes,
+      params.transactionIdBytes,
+      params.tokenAddress,
+      params.tokenAmount.toString(),
+      payoutsHash,
+      params.forwardAddress,
+      params.data,
+    ]
+  );
+
+  const signature = await operator.signMessage(ethers.toBeArray(dataToHash));
+
+  // const sig = ethers.Signature.from(signature);
+
+  return signature;
+}
+
 // TODO: should probably zeroPadLeft
-const convertClientIdToBytes32 = (clientId) => {
-  const originalBytes = Buffer.from(clientId.replace(/-/g, ""), "hex");
+const convertUUIDToBytes32 = (uuid) => {
+  const originalBytes = Buffer.from(uuid.replace(/-/g, ""), "hex");
   const paddedBuffer = Buffer.alloc(32);
   originalBytes.copy(paddedBuffer, 0);
-  const clientIdUint8Array = new Uint8Array(paddedBuffer);
-  const clientIdBytes = ethers.hexlify(clientIdUint8Array);
-  return clientIdBytes;
+  const uuidUint8Array = new Uint8Array(paddedBuffer);
+  const uuidBytes = ethers.hexlify(uuidUint8Array);
+  return uuidBytes;
 };
 
-const convertBytes32ToClientId = (clientIdBytes) => {
-  let trimmedHex = ethers.stripZerosLeft(clientIdBytes);
+const convertBytes32ToUUID = (UUIDBytes) => {
+  let trimmedHex = ethers.stripZerosLeft(UUIDBytes);
   const uuidPattern = trimmedHex.replace(
     /^([\da-f]{8})([\da-f]{4})([\da-f]{4})([\da-f]{4})([\da-f]{12})$/,
     "$1-$2-$3-$4-$5"
@@ -49,9 +91,11 @@ const buildMockTargetCall = (
 };
 
 module.exports = {
-  getClientId,
-  convertClientIdToBytes32,
-  convertBytes32ToClientId,
+  getUUID,
+  convertUUIDToBytes32,
+  convertBytes32ToUUID,
   getThirdwebClientId,
   buildMockTargetCall,
+  prepareAndSignData,
+  generateSignature,
 };
