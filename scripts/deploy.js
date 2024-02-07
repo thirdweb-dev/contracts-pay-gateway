@@ -8,18 +8,13 @@ const hre = require("hardhat");
 
 async function main() {
   const signer = (await hre.ethers.getSigners())[0];
-  const lifiContractAddress = hre.network.config.lifiContractAddress;
-
-  const feeBPS = BigInt(300); // 3% take
 
   const ThirdwebPaymentsGateway = await hre.ethers.getContractFactory(
     "ThirdwebPaymentsGateway"
   );
   const thirdwebPaymentsGateway = await ThirdwebPaymentsGateway.deploy(
     signer.address,
-    signer.address,
-    lifiContractAddress,
-    feeBPS
+    signer.address
   );
 
   await thirdwebPaymentsGateway.waitForDeployment();
