@@ -41,7 +41,7 @@ module.exports = {
   gasReporter: {
     currency: "USD",
     enabled: true,
-    token: "Matic",
+    //token: "Matic",
     coinmarketcap: [CMC_API_KEY],
   },
 };
