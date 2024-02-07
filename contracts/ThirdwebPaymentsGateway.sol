@@ -22,7 +22,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
   event TransferStart(
     bytes32 indexed clientId,
     address indexed sender,
-    string transactionId,
+    bytes32 transactionId,
     address tokenAddress,
     uint256 tokenAmount
   );
@@ -30,7 +30,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
   event TransferEnd(
     bytes32 indexed clientId,
     address indexed receiver,
-    string transactionId,
+    bytes32 transactionId,
     address tokenAddress,
     uint256 tokenAmount
   );
@@ -50,6 +50,8 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     uint256 feeBPS
   );
 
+  event OperatorChanged(address indexed previousOperator, address indexed newOperator);
+
   struct PayoutInfo {
     bytes32 clientId;
     address payable payoutAddress;
@@ -58,11 +60,31 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
   address constant private THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
   address constant private NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
+  address private _operator;
 
-  constructor(address _contractOwner) Ownable(_contractOwner) {}
+  constructor(address contractOwner, address initialOperator) Ownable(contractOwner) {
+    require(initialOperator != address(0), "Operator can't be the zero address");
+    _operator = initialOperator;
+    emit OperatorChanged(address(0), initialOperator);
+  }
+
+  modifier onlyOwnerOrOperator() {
+    require(msg.sender == owner() || msg.sender == _operator, "Caller is not the owner or operator");
+    _;
+}
+
+  function setOperator(address newOperator) public onlyOwnerOrOperator {
+    require(newOperator != address(0), "Operator can't be the zero address");
+    emit OperatorChanged(_operator, newOperator);
+    _operator = newOperator;
+  }
+
+  function getOperator() public view returns (address) {
+    return _operator;
+  }
 
   /* some bridges may refund need a way to get funds back to user */
-  function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public onlyOwner nonReentrant
+  function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public onlyOwnerOrOperator nonReentrant
   {
     if(_isTokenERC20(tokenAddress))
     {
@@ -76,7 +98,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     }
   }
 
-  function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
+  function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwnerOrOperator nonReentrant {
     withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
   } 
 
@@ -97,11 +119,6 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     return feeAmount;
   }
 
-
-
-  /* 
-    TODO: consider the error case where a user puts in a nonpayable address - transaction fails
-  */
   function _distributeFees(
     address tokenAddress,
     uint256 tokenAmount,
@@ -141,17 +158,102 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
     return totalFeeAmount;
   }
 
-  function startTransfer(
+
+  function _hashPayoutInfo(PayoutInfo[] calldata payouts) private pure returns (bytes32) {
+    bytes32 payoutHash = keccak256(abi.encodePacked("PayoutInfo"));
+    for (uint256 i = 0; i < payouts.length; ++i) {
+        payoutHash = keccak256(abi.encodePacked(
+            payoutHash,
+            payouts[i].clientId,
+            payouts[i].payoutAddress,
+            payouts[i].feeBPS
+        ));
+    }
+    return payoutHash;
+}
+
+  function _verifyTransferStart(
     bytes32 clientId,
-    string calldata transactionId,
+    bytes32 transactionId,
     address tokenAddress,
     uint256 tokenAmount,
     PayoutInfo[] calldata payouts,
     address payable forwardAddress,
-    bytes calldata data
+    bytes calldata data,
+    bytes calldata signature
+  ) private returns (bool)
+  {
+    bytes32 payoutsHash = _hashPayoutInfo(payouts);
+    bytes32 hash = keccak256(
+        abi.encodePacked(
+            clientId,
+            transactionId,
+            tokenAddress,
+            tokenAmount,
+            payoutsHash,
+            forwardAddress,
+            data
+        )
+    );
+
+    bytes32 ethSignedMsgHash = keccak256(
+        abi.encodePacked("\x19Ethereum Signed Message:\n32", hash)
+    );
+
+    (address recovered, bool valid) = _recoverSigner(ethSignedMsgHash, signature);
+    return valid && recovered == _operator;
+  }
+
+  function _recoverSigner(bytes32 ethSignedMsgHash, bytes memory signature) public pure returns (address, bool) {
+    bytes32 r;
+    bytes32 s;
+    uint8 v;
+
+    if (signature.length != 65) {
+      return (address(0), false);
+    }
+
+    assembly {
+        r := mload(add(signature, 0x20))
+        s := mload(add(signature, 0x40))
+        v := byte(0, mload(add(signature, 0x60)))
+    }
+
+    if (v < 27) {
+        v += 27;
+    }
+
+    address recovered = ecrecover(ethSignedMsgHash, v, r, s);
+    bool valid = (recovered != address(0));
+
+    return (recovered, valid);
+  }
+
+  function startTransfer(
+    bytes32 clientId,
+    bytes32 transactionId,
+    address tokenAddress,
+    uint256 tokenAmount,
+    PayoutInfo[] calldata payouts,
+    address payable forwardAddress,
+    bytes calldata data,
+    bytes calldata signature
   ) external payable nonReentrant {
     // verify amount
     require(tokenAmount > 0, "token amount must be greater than zero");
+
+    // verify data
+    require(_verifyTransferStart(
+      clientId,
+      transactionId,
+      tokenAddress,
+      tokenAmount,
+      payouts,
+      forwardAddress,
+      data,
+      signature
+    ), "failed to verify transaction");
+    
     if(_isTokenNative(tokenAddress))
     {
       require(msg.value >= tokenAmount, "msg value must be gte than token amount");
@@ -197,7 +299,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
 
   function endTransfer(
     bytes32 clientId,
-    string calldata transactionId,
+    bytes32 transactionId,
     address tokenAddress, 
     uint256 tokenAmount,
     address payable receiverAddress
