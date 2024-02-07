@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { PRIVATE_KEY } = process.env || null;
+const { PRIVATE_KEY, CMC_API_KEY } = process.env || null;
 
 require("@nomicfoundation/hardhat-toolbox");
 require("hardhat-gas-reporter");
@@ -20,7 +20,6 @@ module.exports = {
       url: "https://polygon-rpc.com",
       accounts: [PRIVATE_KEY],
       gasMultiplier: 2,
-      lifiContractAddress: "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae",
       deployedThirdwebGatewayAddress:
         "0xB246b022df8cFd4a752dC058236Cc0A6abd02E3c",
       chainId: 137,
@@ -29,7 +28,6 @@ module.exports = {
       url: "https://optimism-mainnet.public.blastapi.io",
       accounts: [PRIVATE_KEY],
       gasMultiplier: 2,
-      lifiContractAddress: "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae",
       chainId: 10,
     },
   },
@@ -43,5 +41,7 @@ module.exports = {
   gasReporter: {
     currency: "USD",
     enabled: true,
+    token: "Matic",
+    coinmarketcap: [CMC_API_KEY],
   },
 };
