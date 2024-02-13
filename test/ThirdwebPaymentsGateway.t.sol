@@ -145,7 +145,7 @@ contract ThirdwebPaymentsGatewayTest is Test {
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Test `startTransfer` with ERC20
+                    Test `startTransfer`
     //////////////////////////////////////////////////////////////*/
 
     function test_startTransfer_erc20() public {
@@ -309,5 +309,66 @@ contract ThirdwebPaymentsGatewayTest is Test {
             targetCalldata,
             _signature
         );
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                    Test `endTransfer`
+    //////////////////////////////////////////////////////////////*/
+
+    function test_endTransfer_erc20() public {
+        uint256 sendValue = 1 ether;
+
+        // approve amount to gateway contract
+        vm.prank(sender);
+        mockERC20.approve(address(gateway), sendValue);
+
+        // state/balances before sending transaction
+        uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
+        uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
+        uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
+
+        // send transaction
+        bytes32 _transactionId = keccak256("transaction ID");
+        vm.prank(sender);
+        gateway.endTransfer(clientId, _transactionId, address(mockERC20), sendValue, receiver);
+
+        // check balances after transaction
+        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore);
+        assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValue);
+        assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
+    }
+
+    function test_endTransfer_nativeToken() public {
+        uint256 sendValue = 1 ether;
+
+        // state/balances before sending transaction
+        uint256 ownerBalanceBefore = owner.balance;
+        uint256 senderBalanceBefore = sender.balance;
+        uint256 receiverBalanceBefore = receiver.balance;
+
+        // send transaction
+        bytes32 _transactionId = keccak256("transaction ID");
+        vm.prank(sender);
+        gateway.endTransfer{ value: sendValue }(clientId, _transactionId, address(0), sendValue, receiver);
+
+        // check balances after transaction
+        assertEq(owner.balance, ownerBalanceBefore);
+        assertEq(sender.balance, senderBalanceBefore - sendValue);
+        assertEq(receiver.balance, receiverBalanceBefore + sendValue);
+    }
+
+    function test_endTransfer_events() public {
+        uint256 sendValue = 1 ether;
+
+        // approve amount to gateway contract
+        vm.prank(sender);
+        mockERC20.approve(address(gateway), sendValue);
+
+        // send transaction
+        bytes32 _transactionId = keccak256("transaction ID");
+        vm.prank(sender);
+        vm.expectEmit(true, true, false, true);
+        emit TransferEnd(clientId, receiver, _transactionId, address(mockERC20), sendValue);
+        gateway.endTransfer(clientId, _transactionId, address(mockERC20), sendValue, receiver);
     }
 }
