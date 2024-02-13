@@ -1,7 +1,6 @@
 # folders
-artifacts_forge/
-contract_artifacts/
-/cache
+artifacts_forge
+cache
 node_modules
 
 # files
