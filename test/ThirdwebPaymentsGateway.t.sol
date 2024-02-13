@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import { Test, console2 } from "forge-std/Test.sol";
-import { ThirdwebPaymentsGateway } from "contracts/ThirdwebPaymentsGateway.sol";
+import { Test, console, console2 } from "forge-std/Test.sol";
+import { ThirdwebPaymentsGateway } from "src/ThirdwebPaymentsGateway.sol";
 import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
-
-import "lib/forge-std/src/console.sol";
 
 contract ThirdwebPaymentsGatewayTest is Test {
     event TransferStart(

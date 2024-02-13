@@ -178,6 +178,7 @@ contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
         bytes32 ethSignedMsgHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
 
         (address recovered, bool valid) = _recoverSigner(ethSignedMsgHash, signature);
+
         return valid && recovered == _operator;
     }
 

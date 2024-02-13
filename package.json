@@ -4,28 +4,13 @@
   "main": "index.js",
   "license": "MIT",
   "devDependencies": {
-    "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
-    "@nomicfoundation/hardhat-ethers": "^3.0.5",
-    "@nomicfoundation/hardhat-network-helpers": "^1.0.0",
-    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
-    "@nomicfoundation/hardhat-verify": "^2.0.0",
-    "@typechain/ethers-v6": "^0.5.0",
-    "@typechain/hardhat": "^9.0.0",
-    "chai": "^4.2.0",
     "ethers": "^6.10.0",
-    "hardhat": "^2.19.4",
-    "hardhat-contract-sizer": "^2.10.0",
-    "hardhat-gas-reporter": "^1.0.10",
     "solidity-coverage": "^0.8.0",
-    "typechain": "^8.3.0",
     "prettier": "^2.8.8",
-    "prettier-plugin-solidity": "^1.2.0"
+    "prettier-plugin-solidity": "^1.2.0",
+    "dotenv": "^16.3.2"
   },
-  "dependencies": {
-    "@openzeppelin/contracts": "^5.0.1",
-    "dotenv": "^16.3.2",
-    "uuid": "^9.0.1"
-  },
+  "dependencies": {},
   "scripts": {
     "prettier": "prettier --config .prettierrc --write --plugin=prettier-plugin-solidity '{contracts,src,test}/**/*.sol'",
     "prettier:list-different": "prettier --config .prettierrc --plugin=prettier-plugin-solidity --list-different '**/*.sol'",
