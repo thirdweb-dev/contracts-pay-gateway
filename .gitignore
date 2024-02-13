@@ -1,9 +1,11 @@
-node_modules
-.env
-
-# Hardhat files
+# folders
+artifacts_forge/
+contract_artifacts/
 /cache
-/artifacts
+node_modules
+
+# files
+*.env
 
 # TypeChain files
 /typechain
