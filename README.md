@@ -15,6 +15,21 @@ npx hardhat run scripts/deploy.js
 # swaps-gateway-proto
 
 Polygon Deploy
-USAGE: npx hardhat run --network polygon scripts/deploy.js
+USAGE: 
 
 Successfully deployed on polygon: 0xB246b022df8cFd4a752dC058236Cc0A6abd02E3c
+
+
+## Usage
+
+### Deploy
+npx hardhat run --network <network> scripts/deploy.js
+example: npx hardhat run --network polygon scripts/deploy.js
+
+### Test
+npx hardhat test
+npx hardhat test --grep <testcase>
+
+### Encode Transfer End
+prints the data for the transfer end call. Use this for testing wrapping the data.
+

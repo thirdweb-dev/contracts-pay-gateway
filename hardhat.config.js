@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { PRIVATE_KEY, CMC_API_KEY } = process.env || null;
+const { PRIVATE_KEY, CMC_API_KEY, POLYGON_API_KEY } = process.env || null;
 
 require("@nomicfoundation/hardhat-toolbox");
 require("hardhat-gas-reporter");
@@ -21,7 +21,7 @@ module.exports = {
       accounts: [PRIVATE_KEY],
       gasMultiplier: 2,
       deployedThirdwebGatewayAddress:
-        "0xB246b022df8cFd4a752dC058236Cc0A6abd02E3c",
+        "0x53329af2F9920A8ec257410B78824c933220CAdD",
       chainId: 137,
     },
     optimism: {
@@ -29,6 +29,8 @@ module.exports = {
       accounts: [PRIVATE_KEY],
       gasMultiplier: 2,
       chainId: 10,
+      deployedThirdwebGatewayAddress:
+        "0x15aEA44a5dCcd8f0520f506232415963786Fa3Cb",
     },
   },
   contractSizer: {
@@ -43,5 +45,11 @@ module.exports = {
     enabled: true,
     //token: "Matic",
     coinmarketcap: [CMC_API_KEY],
+  },
+  etherscan: {
+    apiKey: {
+      // Ethereum
+      polygon: POLYGON_API_KEY,
+    },
   },
 };
