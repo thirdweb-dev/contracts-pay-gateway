@@ -2,11 +2,11 @@
 pragma solidity ^0.8.13;
 
 import { Test, console, console2 } from "forge-std/Test.sol";
-import { ThirdwebPaymentsGateway } from "src/ThirdwebPaymentsGateway.sol";
+import { PaymentsGateway } from "src/PaymentsGateway.sol";
 import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
 
-contract ThirdwebPaymentsGatewayTest is Test {
+contract PaymentsGatewayTest is Test {
     event TransferStart(
         bytes32 indexed clientId,
         address indexed sender,
@@ -34,7 +34,7 @@ contract ThirdwebPaymentsGatewayTest is Test {
 
     event OperatorChanged(address indexed previousOperator, address indexed newOperator);
 
-    ThirdwebPaymentsGateway internal gateway;
+    PaymentsGateway internal gateway;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
@@ -51,7 +51,7 @@ contract ThirdwebPaymentsGatewayTest is Test {
     uint256 internal clientFeeBps;
     uint256 internal totalFeeBps;
 
-    ThirdwebPaymentsGateway.PayoutInfo[] internal payouts;
+    PaymentsGateway.PayoutInfo[] internal payouts;
 
     function setUp() public {
         owner = payable(vm.addr(1));
@@ -66,7 +66,7 @@ contract ThirdwebPaymentsGatewayTest is Test {
         ownerFeeBps = 200;
         clientFeeBps = 100;
 
-        gateway = new ThirdwebPaymentsGateway(owner, operator);
+        gateway = new PaymentsGateway(owner, operator);
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
 
@@ -76,11 +76,9 @@ contract ThirdwebPaymentsGatewayTest is Test {
 
         // build payout info
         payouts.push(
-            ThirdwebPaymentsGateway.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeBPS: ownerFeeBps })
+            PaymentsGateway.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeBPS: ownerFeeBps })
         );
-        payouts.push(
-            ThirdwebPaymentsGateway.PayoutInfo({ clientId: clientId, payoutAddress: client, feeBPS: clientFeeBps })
-        );
+        payouts.push(PaymentsGateway.PayoutInfo({ clientId: clientId, payoutAddress: client, feeBPS: clientFeeBps }));
         for (uint256 i = 0; i < payouts.length; i++) {
             totalFeeBps += payouts[i].feeBPS;
         }
@@ -100,7 +98,7 @@ contract ThirdwebPaymentsGatewayTest is Test {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
     }
 
-    function _hashPayoutInfo(ThirdwebPaymentsGateway.PayoutInfo[] memory _payouts) private pure returns (bytes32) {
+    function _hashPayoutInfo(PaymentsGateway.PayoutInfo[] memory _payouts) private pure returns (bytes32) {
         bytes32 payoutHash = keccak256(abi.encodePacked("PayoutInfo"));
         for (uint256 i = 0; i < _payouts.length; ++i) {
             payoutHash = keccak256(

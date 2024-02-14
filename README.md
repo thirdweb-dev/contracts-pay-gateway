@@ -10,9 +10,9 @@ This is a forwarder contract that forwards the swap providers transaction (LiFi,
 - exit point for contract calls - for LiFi, they can only guarantee toAmount for contract calls. This allows use to add a contract call to transferEnd that forwards the end funds to the user
 - Stateless - this will be deployed on many different chains. We don’t want to have to call addClient, changeFee, addSwapProvider, etc on every single chain for every change. Therefore, this should not rely on data held in the state of the contract, but rather data passed in
 
-[Thirdweb Gateway Reference](img/gateway.png)
+[Gateway Reference](img/gateway.png)
 
-[Thirdweb Gateway With Transfer End](img/gateway-transfer-end.png)
+[Gateway With Transfer End](img/gateway-transfer-end.png)
 
 ## Features
 

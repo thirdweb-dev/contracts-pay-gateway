@@ -17,7 +17,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
     - add operator role automating withdrawals
  */
 
-contract ThirdwebPaymentsGateway is Ownable, ReentrancyGuard {
+contract PaymentsGateway is Ownable, ReentrancyGuard {
     event TransferStart(
         bytes32 indexed clientId,
         address indexed sender,
