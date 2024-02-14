@@ -10,6 +10,7 @@ const {
   getThirdwebClientId,
   buildMockTargetCall,
   prepareAndSignData,
+  calcSendAmountWeiPostFees,
   generateSignature,
 } = require("./utils");
 
@@ -165,6 +166,119 @@ describe("test:erc20:transferStart", function () {
       initialSenderBalance - sendValueWithFees,
       "unexpected sender balance"
     );
+    expect(finalReceiverBalance).to.equal(
+      initialReceiverBalance + sendValue,
+      "unexpected receiver balance"
+    );
+  });
+
+  it("should successfully transfer erc20 .5 eth", async function () {
+    const { gateway, target, owner, erc20, client, sender, receiver } =
+      await loadFixture(deployContracts);
+
+    // todo: move setup into fixture
+    const clientIdBytes = convertUUIDToBytes32(getUUID());
+    const twClientId = getThirdwebClientId();
+    const twClientIdBytes = convertUUIDToBytes32(twClientId);
+
+    const payouts = [
+      {
+        clientId: twClientIdBytes,
+        payoutAddress: owner.address,
+        feeBPS: BigInt(200), // 2%
+      },
+      {
+        clientId: clientIdBytes,
+        payoutAddress: client.address,
+        feeBPS: BigInt(100), // 1%
+      },
+    ];
+
+    const totalFeeBPS = payouts.reduce(
+      (acc, payee) => acc + payee.feeBPS,
+      BigInt(0)
+    );
+    const forwardAddress = await target.getAddress();
+    const sendValueWithFees = ethers.parseEther(".5");
+    const sendValue = calcSendAmountWeiPostFees(sendValueWithFees, totalFeeBPS);
+
+    // build dummy forward call
+    const transactionIdBytes = convertUUIDToBytes32(getUUID());
+    const message = "Hello world!";
+    const tokenAddress = await erc20.getAddress();
+    const data = buildMockTargetCall(
+      sender.address,
+      receiver.address,
+      tokenAddress,
+      sendValue,
+      message
+    );
+
+    // trakc init balances
+    const initialOwnerBalance = await erc20.balanceOf(owner.address);
+    const initialClientBalance = await erc20.balanceOf(client.address);
+    const initialSenderBalance = await erc20.balanceOf(sender.address);
+    const initialReceiverBalance = await erc20.balanceOf(receiver.address);
+
+    // approve tw gateway contract
+    const approveTx = await erc20
+      .connect(sender)
+      .approve(await gateway.getAddress(), sendValueWithFees);
+    const approveReceipt = await approveTx.wait();
+    expect(approveReceipt, "Approve Reverted").to.not.be.reverted;
+
+    const signature = await prepareAndSignData(
+      operator,
+      {
+        clientIdBytes,
+        transactionIdBytes,
+        tokenAddress,
+        tokenAmount: sendValue,
+        forwardAddress,
+        data,
+      },
+      payouts
+    );
+
+    // send the transaction
+    const tx = await gateway
+      .connect(sender)
+      .startTransfer(
+        clientIdBytes,
+        transactionIdBytes,
+        tokenAddress,
+        sendValue,
+        payouts,
+        forwardAddress,
+        data,
+        signature
+      );
+    const receipt = await tx.wait();
+    expect(receipt, "transfer reverted").to.not.be.reverted;
+
+    // get balances after transfer
+    const finalOwnerBalance = await erc20.balanceOf(owner.address);
+    const finalClientBalance = await erc20.balanceOf(client.address);
+    const finalSenderBalance = await erc20.balanceOf(sender.address);
+    const finalReceiverBalance = await erc20.balanceOf(receiver.address);
+
+    // Assert the balance changes
+    expect(finalOwnerBalance).to.equal(
+      initialOwnerBalance + (sendValue * payouts[0].feeBPS) / BigInt(10_000),
+      "unexpected owner balance"
+    );
+
+    expect(finalClientBalance).to.equal(
+      initialClientBalance + (sendValue * payouts[1].feeBPS) / BigInt(10_000),
+      "unexpected client balance"
+    );
+
+    expect(finalSenderBalance).to.be.within(
+      initialSenderBalance - sendValueWithFees - BigInt(3),
+      initialSenderBalance - sendValueWithFees + BigInt(3),
+      "unexpected sender balance"
+    );
+
     expect(finalReceiverBalance).to.equal(
       initialReceiverBalance + sendValue,
       "unexpected receiver balance"

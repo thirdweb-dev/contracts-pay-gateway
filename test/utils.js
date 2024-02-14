@@ -67,6 +67,18 @@ const convertBytes32ToUUID = (UUIDBytes) => {
   return uuidPattern;
 };
 
+const calculateThirdwebSwapFees = (baseAmountWei, totalFeeBPS) => {
+  return (baseAmountWei * totalFeeBPS) / BigInt(10_000);
+};
+
+const calcFromAmountWeiPostFees = (sendAmountWei, totalFeeBPS) => {
+  return sendAmountWei + calculateThirdwebSwapFees(sendAmountWei, totalFeeBPS);
+};
+
+const calcSendAmountWeiPostFees = (fromAmountWei, totalFeeBPS) => {
+  return (fromAmountWei * BigInt(10_000)) / (BigInt(10_000) + totalFeeBPS);
+};
+
 const getThirdwebClientId = () => {
   // all zeroes
   const paddedBuffer = Buffer.alloc(32);
@@ -98,4 +110,6 @@ module.exports = {
   buildMockTargetCall,
   prepareAndSignData,
   generateSignature,
+  calcSendAmountWeiPostFees,
+  calculateThirdwebSwapFees,
 };
