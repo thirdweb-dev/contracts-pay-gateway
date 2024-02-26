@@ -1,9 +1,10 @@
+# folders
+artifacts_forge
+cache
 node_modules
-.env
 
-# Hardhat files
-/cache
-/artifacts
+# files
+*.env
 
 # TypeChain files
 /typechain
