@@ -207,6 +207,17 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         return (recovered, valid);
     }
 
+
+    /**
+      The purpose of startTransfer is to be the entrypoint for all thirdweb pay swap / bridge
+      transactions. This function will allow us to standardize the logging and fee splitting across all providers. 
+      
+      Requirements:
+      1. Verify the parameters are the same parameters sent from thirdweb pay service by requiring a backend signature
+      2. Log transfer start allowing us to link onchain and offchain data
+      3. distribute the fees to all the payees (thirdweb, developer, swap provider??)
+      4. forward the user funds to the swap provider (forwardAddress)
+     */
     function startTransfer(
         bytes32 clientId,
         bytes32 transactionId,
@@ -266,6 +277,16 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         require(success, "Failed to forward");
     }
 
+    /**
+      The purpose of endTransfer is to provide a forwarding contract call
+      on the destination chain. For LiFi (swap provider), they can only guarantee the toAmount
+      if we use a contract call. This allows us to call the endTransfer function and forward the 
+      funds to the end user. 
+
+      Requirements:
+      1. Log the transfer end
+      2. forward the user funds
+     */
     function endTransfer(
         bytes32 clientId,
         bytes32 transactionId,
