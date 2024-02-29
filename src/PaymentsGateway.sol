@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { SafeTransferLib } from "./lib/SafeTransferLib.sol";
 
 /**
   Requirements
@@ -18,6 +19,13 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  */
 
 contract PaymentsGateway is Ownable, ReentrancyGuard {
+    error PaymentsGatewayInvalidOperator(address operator);
+    error PaymentsGatewayNotOwnerOrOperator(address caller);
+    error PaymentsGatewayMismatchedValue(uint256 expected, uint256 actual);
+    error PaymentsGatewayInvalidAmount(uint256 amount);
+    error PaymentsGatewayVerificationFailed();
+    error PaymentsGatewayFailedToForward();
+
     event TransferStart(
         bytes32 indexed clientId,
         address indexed sender,
@@ -62,18 +70,24 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
     address private _operator;
 
     constructor(address contractOwner, address initialOperator) Ownable(contractOwner) {
-        require(initialOperator != address(0), "Operator can't be the zero address");
+        if (initialOperator == address(0)) {
+            revert PaymentsGatewayInvalidOperator(initialOperator);
+        }
         _operator = initialOperator;
         emit OperatorChanged(address(0), initialOperator);
     }
 
     modifier onlyOwnerOrOperator() {
-        require(msg.sender == owner() || msg.sender == _operator, "Caller is not the owner or operator");
+        if (msg.sender != owner() && msg.sender != _operator) {
+            revert PaymentsGatewayNotOwnerOrOperator(msg.sender);
+        }
         _;
     }
 
     function setOperator(address newOperator) public onlyOwnerOrOperator {
-        require(newOperator != address(0), "Operator can't be the zero address");
+        if (newOperator == address(0)) {
+            revert PaymentsGatewayInvalidOperator(newOperator);
+        }
         emit OperatorChanged(_operator, newOperator);
         _operator = newOperator;
     }
@@ -89,13 +103,9 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         address payable receiver
     ) public onlyOwnerOrOperator nonReentrant {
         if (_isTokenERC20(tokenAddress)) {
-            require(
-                IERC20(tokenAddress).transferFrom(address(this), receiver, tokenAmount),
-                "Failed to withdraw funds"
-            );
+            SafeTransferLib.safeTransferFrom(tokenAddress, address(this), receiver, tokenAmount);
         } else {
-            (bool sent, ) = receiver.call{ value: tokenAmount }("");
-            require(sent, "Failed to withdraw funds");
+            SafeTransferLib.safeTransferETH(receiver, tokenAmount);
         }
     }
 
@@ -136,17 +146,15 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
                 payouts[payeeIdx].feeBPS
             );
             if (_isTokenNative(tokenAddress)) {
-                (bool sent, ) = payouts[payeeIdx].payoutAddress.call{ value: feeAmount }("");
-                require(sent, "Failed to distribute fees");
+                SafeTransferLib.safeTransferETH(payouts[payeeIdx].payoutAddress, feeAmount);
             } else {
-                require(
-                    IERC20(tokenAddress).transferFrom(msg.sender, payouts[payeeIdx].payoutAddress, feeAmount),
-                    "Token Fee Transfer Failed"
-                );
+                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, payouts[payeeIdx].payoutAddress, feeAmount);
             }
         }
 
-        require(totalFeeAmount < tokenAmount, "fees exceeded tokenAmount");
+        if (totalFeeAmount > tokenAmount) {
+            revert PaymentsGatewayMismatchedValue(totalFeeAmount, tokenAmount);
+        }
         return totalFeeAmount;
     }
 
@@ -207,7 +215,6 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         return (recovered, valid);
     }
 
-
     /**
       The purpose of startTransfer is to be the entrypoint for all thirdweb pay swap / bridge
       transactions. This function will allow us to standardize the logging and fee splitting across all providers. 
@@ -229,11 +236,13 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         bytes calldata signature
     ) external payable nonReentrant {
         // verify amount
-        require(tokenAmount > 0, "token amount must be greater than zero");
+        if (tokenAmount == 0) {
+            revert PaymentsGatewayInvalidAmount(tokenAmount);
+        }
 
         // verify data
-        require(
-            _verifyTransferStart(
+        if (
+            !_verifyTransferStart(
                 clientId,
                 transactionId,
                 tokenAddress,
@@ -242,39 +251,52 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
                 forwardAddress,
                 data,
                 signature
-            ),
-            "failed to verify transaction"
-        );
-
-        if (_isTokenNative(tokenAddress)) {
-            require(msg.value >= tokenAmount, "msg value must be gte than token amount");
+            )
+        ) {
+            revert PaymentsGatewayVerificationFailed();
         }
 
-        emit TransferStart(clientId, msg.sender, transactionId, tokenAddress, tokenAmount);
+        if (_isTokenNative(tokenAddress)) {
+            if (msg.value < tokenAmount) {
+                revert PaymentsGatewayMismatchedValue(tokenAmount, msg.value);
+            }
+        }
 
         // distribute fees
         uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, payouts);
 
         // determine native value to send
-        uint256 sendValue = msg.value;
+        uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
         if (_isTokenNative(tokenAddress)) {
             sendValue = msg.value - totalFeeAmount;
-            require(sendValue <= msg.value, "send value cannot exceed msg value");
-            require(sendValue >= tokenAmount, "send value must cover tokenAmount");
+
+            if (sendValue < tokenAmount) {
+                revert PaymentsGatewayMismatchedValue(sendValue, tokenAmount);
+            }
         }
 
         if (_isTokenERC20(tokenAddress)) {
             // pull user funds
-            require(
-                IERC20(tokenAddress).transferFrom(msg.sender, address(this), tokenAmount),
-                "Failed to pull user erc20 funds"
-            );
-
-            require(IERC20(tokenAddress).approve(forwardAddress, tokenAmount), "Failed to approve forwarder");
+            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
+            SafeTransferLib.safeApprove(tokenAddress, forwardAddress, tokenAmount);
         }
 
-        (bool success, ) = forwardAddress.call{ value: sendValue }(data);
-        require(success, "Failed to forward");
+        {
+            (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }(data);
+            if (!success) {
+                // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
+                if (response.length > 0) {
+                    assembly {
+                        let returndata_size := mload(response)
+                        revert(add(32, response), returndata_size)
+                    }
+                } else {
+                    revert PaymentsGatewayFailedToForward();
+                }
+            }
+        }
+
+        emit TransferStart(clientId, msg.sender, transactionId, tokenAddress, tokenAmount);
     }
 
     /**
@@ -294,23 +316,23 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         uint256 tokenAmount,
         address payable receiverAddress
     ) external payable nonReentrant {
-        require(tokenAmount > 0, "token amount must be greater than zero");
-
-        if (_isTokenNative(tokenAddress)) {
-            require(msg.value >= tokenAmount, "msg value must be gte token amount");
+        if (tokenAmount == 0) {
+            revert PaymentsGatewayInvalidAmount(tokenAmount);
         }
 
-        emit TransferEnd(clientId, receiverAddress, transactionId, tokenAddress, tokenAmount);
+        if (_isTokenNative(tokenAddress)) {
+            if (msg.value < tokenAmount) {
+                revert PaymentsGatewayMismatchedValue(tokenAmount, msg.value);
+            }
+        }
 
         // pull user funds
         if (_isTokenERC20(tokenAddress)) {
-            require(
-                IERC20(tokenAddress).transferFrom(msg.sender, receiverAddress, tokenAmount),
-                "Failed to forward erc20 funds"
-            );
+            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, receiverAddress, tokenAmount);
         } else {
-            (bool success, ) = receiverAddress.call{ value: tokenAmount }("");
-            require(success, "Failed to send to reciever");
+            SafeTransferLib.safeTransferETH(receiverAddress, tokenAmount);
         }
+
+        emit TransferEnd(clientId, receiverAddress, transactionId, tokenAddress, tokenAmount);
     }
 }

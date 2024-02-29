@@ -294,7 +294,7 @@ contract PaymentsGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        vm.expectRevert("failed to verify transaction");
+        vm.expectRevert(abi.encodeWithSelector(PaymentsGateway.PaymentsGatewayVerificationFailed.selector));
         gateway.startTransfer(
             clientId,
             _transactionId,
