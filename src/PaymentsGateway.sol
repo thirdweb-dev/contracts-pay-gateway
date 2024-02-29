@@ -246,6 +246,9 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
             }
         }
 
+        // mark the pay request as processed
+        processed[req.transactionId] = true;
+
         // distribute fees
         uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.tokenAmount, req.payouts);
 
