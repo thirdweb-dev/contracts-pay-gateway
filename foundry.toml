@@ -3,6 +3,11 @@ solc-version = "0.8.23"
 #auto_detect_solc = false
 cache = true
 evm_version = 'london'
+gas_reports = [
+  "BenchmarkPaymentsGateway",
+  "BenchmarkPaymentsGatewayPull",
+  "BenchmarkPaymentsGatewaySplit",
+]
 src = 'src'
 test = 'test'
 out = 'artifacts_forge'

@@ -14,6 +14,7 @@
   "scripts": {
     "prettier": "prettier --config .prettierrc --write --plugin=prettier-plugin-solidity '{contracts,src,test}/**/*.sol'",
     "prettier:list-different": "prettier --config .prettierrc --plugin=prettier-plugin-solidity --list-different '**/*.sol'",
-    "prettier:contracts": "prettier --config .prettierrc --plugin=prettier-plugin-solidity --list-different '{contracts,src, test}/**/*.sol'"
+    "prettier:contracts": "prettier --config .prettierrc --plugin=prettier-plugin-solidity --list-different '{contracts,src, test}/**/*.sol'",
+    "gas": "forge snapshot --mc Benchmark --gas-report --diff .gas-snapshot > gasreport.txt"
   }
 }
