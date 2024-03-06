@@ -73,7 +73,7 @@ contract PaymentsGatewayTest is Test {
         ownerFeeBps = 200;
         clientFeeBps = 100;
 
-        gateway = new PaymentsGateway(owner, operator);
+        gateway = new PaymentsGateway(operator);
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
 
@@ -93,7 +93,7 @@ contract PaymentsGatewayTest is Test {
         // EIP712
         typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
         typehashPayRequest = keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address payable forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
         nameHash = keccak256(bytes("PaymentsGateway"));
         versionHash = keccak256(bytes("1"));

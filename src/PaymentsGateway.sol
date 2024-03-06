@@ -2,7 +2,6 @@
 pragma solidity ^0.8.22;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { EIP712 } from "./utils/EIP712.sol";
@@ -24,8 +23,6 @@ import { ECDSA } from "./lib/ECDSA.sol";
 contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
 
-    error PaymentsGatewayInvalidOperator(address operator);
-    error PaymentsGatewayNotOwnerOrOperator(address caller);
     error PaymentsGatewayMismatchedValue(uint256 expected, uint256 actual);
     error PaymentsGatewayInvalidAmount(uint256 amount);
     error PaymentsGatewayVerificationFailed();
@@ -83,48 +80,22 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
     bytes32 private constant REQUEST_TYPEHASH =
         keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address payable forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
     address private constant THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
     address private constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
-    address private _operator;
 
     /// @dev Mapping from pay request UID => whether the pay request is processed.
     mapping(bytes32 => bool) private processed;
 
-    constructor(address contractOwner, address initialOperator) Ownable(contractOwner) {
-        if (initialOperator == address(0)) {
-            revert PaymentsGatewayInvalidOperator(initialOperator);
-        }
-        _operator = initialOperator;
-        emit OperatorChanged(address(0), initialOperator);
-    }
-
-    modifier onlyOwnerOrOperator() {
-        if (msg.sender != owner() && msg.sender != _operator) {
-            revert PaymentsGatewayNotOwnerOrOperator(msg.sender);
-        }
-        _;
-    }
-
-    function setOperator(address newOperator) public onlyOwnerOrOperator {
-        if (newOperator == address(0)) {
-            revert PaymentsGatewayInvalidOperator(newOperator);
-        }
-        emit OperatorChanged(_operator, newOperator);
-        _operator = newOperator;
-    }
-
-    function getOperator() public view returns (address) {
-        return _operator;
-    }
+    constructor(address contractOwner) Ownable(contractOwner) {}
 
     /* some bridges may refund need a way to get funds back to user */
     function withdrawTo(
         address tokenAddress,
         uint256 tokenAmount,
         address payable receiver
-    ) public onlyOwnerOrOperator nonReentrant {
+    ) public onlyOwner nonReentrant {
         if (_isTokenERC20(tokenAddress)) {
             SafeTransferLib.safeTransferFrom(tokenAddress, address(this), receiver, tokenAmount);
         } else {
@@ -132,7 +103,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         }
     }
 
-    function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwnerOrOperator nonReentrant {
+    function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
@@ -213,7 +184,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
 
         bytes32 digest = _hashTypedData(structHash);
         address recovered = digest.recover(signature);
-        bool valid = recovered == _operator && !processed[req.transactionId];
+        bool valid = recovered == owner() && !processed[req.transactionId];
 
         return valid;
     }
