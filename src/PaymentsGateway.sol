@@ -80,7 +80,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
     bytes32 private constant REQUEST_TYPEHASH =
         keccak256(
-            "PayRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address payable forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
     address private constant THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
     address private constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
@@ -158,13 +158,13 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     }
 
     function _hashPayoutInfo(PayoutInfo[] calldata payouts) private pure returns (bytes32) {
-        bytes32 payoutHash = PAYOUTINFO_TYPEHASH;
-        for (uint256 i = 0; i < payouts.length; ++i) {
-            payoutHash = keccak256(
-                abi.encode(payoutHash, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
+        bytes32[] memory payoutsHashes = new bytes32[](payouts.length);
+        for (uint i = 0; i < payouts.length; i++) {
+            payoutsHashes[i] = keccak256(
+                abi.encode(PAYOUTINFO_TYPEHASH, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
             );
         }
-        return payoutHash;
+        return keccak256(abi.encodePacked(payoutsHashes));
     }
 
     function _verifyTransferStart(PayRequest calldata req, bytes calldata signature) private view returns (bool) {
@@ -178,7 +178,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
                 req.tokenAmount,
                 payoutsHash,
                 req.forwardAddress,
-                req.data
+                keccak256(req.data)
             )
         );
 

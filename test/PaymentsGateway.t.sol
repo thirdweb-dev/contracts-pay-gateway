@@ -62,7 +62,7 @@ contract PaymentsGatewayTest is Test {
 
     function setUp() public {
         owner = payable(vm.addr(1));
-        operator = payable(vm.addr(2));
+        operator = payable(vm.addr(0x0000000000000000000000000000000000000000000000000000000000000002));
         sender = payable(vm.addr(3));
         receiver = payable(vm.addr(4));
         client = payable(vm.addr(5));
@@ -86,6 +86,11 @@ contract PaymentsGatewayTest is Test {
             PaymentsGateway.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeBPS: ownerFeeBps })
         );
         payouts.push(PaymentsGateway.PayoutInfo({ clientId: clientId, payoutAddress: client, feeBPS: clientFeeBps }));
+
+        // console.logBytes32(clientId);
+        // console.log(client);
+        // console.log(clientFeeBps);
+        console.log(address(gateway));
         for (uint256 i = 0; i < payouts.length; i++) {
             totalFeeBps += payouts[i].feeBPS;
         }
@@ -93,7 +98,7 @@ contract PaymentsGatewayTest is Test {
         // EIP712
         typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
         typehashPayRequest = keccak256(
-            "PayRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address payable forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
         nameHash = keccak256(bytes("PaymentsGateway"));
         versionHash = keccak256(bytes("1"));
@@ -118,14 +123,15 @@ contract PaymentsGatewayTest is Test {
     }
 
     function _hashPayoutInfo(PaymentsGateway.PayoutInfo[] memory _payouts) private view returns (bytes32) {
-        // bytes32 payoutHash = keccak256(abi.encodePacked("PayoutInfo"));
         bytes32 payoutHash = typehashPayoutInfo;
-        for (uint256 i = 0; i < _payouts.length; ++i) {
-            payoutHash = keccak256(
-                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeBPS)
+
+        bytes32[] memory payoutsHashes = new bytes32[](payouts.length);
+        for (uint i = 0; i < payouts.length; i++) {
+            payoutsHashes[i] = keccak256(
+                abi.encode(payoutHash, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
             );
         }
-        return payoutHash;
+        return keccak256(abi.encodePacked(payoutsHashes));
     }
 
     function _prepareAndSignData(
@@ -143,7 +149,7 @@ contract PaymentsGatewayTest is Test {
                 req.tokenAmount,
                 _payoutsHash,
                 req.forwardAddress,
-                req.data
+                keccak256(req.data)
             );
         }
 
@@ -183,7 +189,7 @@ contract PaymentsGatewayTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
+            0x0000000000000000000000000000000000000000000000000000000000000002, // sign with operator private key, i.e. 2
             req
         );
 
@@ -221,11 +227,20 @@ contract PaymentsGatewayTest is Test {
         req.data = targetCalldata;
         req.payouts = payouts;
 
+        console.logBytes32(clientId);
+        console.logBytes32(_transactionId);
+        console.log(sendValue);
+        console.log(address(mockTarget));
+        console.logBytes(targetCalldata);
+
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
+            0x0000000000000000000000000000000000000000000000000000000000000002, // sign with operator private key, i.e. 2
             req
         );
+
+        console.logBytes(_signature);
+        console.log(address(uint160(gateway._cachedThis())));
 
         // state/balances before sending transaction
         uint256 ownerBalanceBefore = owner.balance;
@@ -267,7 +282,7 @@ contract PaymentsGatewayTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
+            0x0000000000000000000000000000000000000000000000000000000000000002, // sign with operator private key, i.e. 2
             req
         );
 
