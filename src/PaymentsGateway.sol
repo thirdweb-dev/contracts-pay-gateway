@@ -27,6 +27,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     error PaymentsGatewayInvalidAmount(uint256 amount);
     error PaymentsGatewayVerificationFailed();
     error PaymentsGatewayFailedToForward();
+    error PaymentsGatewayRequestExpired(uint256 expirationTimestamp);
 
     event TransferStart(
         bytes32 indexed clientId,
@@ -71,6 +72,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         bytes32 transactionId;
         address tokenAddress;
         uint256 tokenAmount;
+        uint256 expirationTimestamp;
         PayoutInfo[] payouts;
         address payable forwardAddress;
         bytes data;
@@ -80,7 +82,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
     bytes32 private constant REQUEST_TYPEHASH =
         keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
     address private constant THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
     address private constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
@@ -176,6 +178,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
                 req.transactionId,
                 req.tokenAddress,
                 req.tokenAmount,
+                req.expirationTimestamp,
                 payoutsHash,
                 req.forwardAddress,
                 keccak256(req.data)
@@ -204,6 +207,11 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         // verify amount
         if (req.tokenAmount == 0) {
             revert PaymentsGatewayInvalidAmount(req.tokenAmount);
+        }
+
+        // verify expiration timestamp
+        if (req.expirationTimestamp < block.timestamp) {
+            revert PaymentsGatewayRequestExpired(req.expirationTimestamp);
         }
 
         // verify data

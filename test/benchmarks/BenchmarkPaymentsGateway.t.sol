@@ -35,7 +35,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
 
     function setUp() public {
         owner = payable(vm.addr(1));
-        operator = payable(vm.addr(0x0000000000000000000000000000000000000000000000000000000000000002));
+        operator = payable(vm.addr(2));
         sender = payable(vm.addr(3));
         receiver = payable(vm.addr(4));
         client = payable(vm.addr(5));
@@ -66,7 +66,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
         // EIP712
         typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
         typehashPayRequest = keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
         nameHash = keccak256(bytes("PaymentsGateway"));
         versionHash = keccak256(bytes("1"));
@@ -91,19 +91,12 @@ contract BenchmarkPaymentsGatewayTest is Test {
     }
 
     function _hashPayoutInfo(PaymentsGateway.PayoutInfo[] memory _payouts) private view returns (bytes32) {
-        // bytes32 payoutHash = keccak256(abi.encodePacked("PayoutInfo"));
         bytes32 payoutHash = typehashPayoutInfo;
-        // for (uint256 i = 0; i < _payouts.length; ++i) {
-        //     payoutHash = keccak256(
-        //         abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeBPS)
-        //     );
-        // }
-        // return payoutHash;
 
-        bytes32[] memory payoutsHashes = new bytes32[](payouts.length);
+        bytes32[] memory payoutsHashes = new bytes32[](_payouts.length);
         for (uint i = 0; i < payouts.length; i++) {
             payoutsHashes[i] = keccak256(
-                abi.encode(payoutHash, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
+                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeBPS)
             );
         }
         return keccak256(abi.encodePacked(payoutsHashes));
@@ -122,6 +115,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
                 req.transactionId,
                 req.tokenAddress,
                 req.tokenAmount,
+                req.expirationTimestamp,
                 _payoutsHash,
                 req.forwardAddress,
                 keccak256(req.data)
@@ -160,12 +154,13 @@ contract BenchmarkPaymentsGatewayTest is Test {
         req.tokenAddress = address(mockERC20);
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
+        req.expirationTimestamp = 1000;
         req.data = targetCalldata;
         req.payouts = payouts;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            0x0000000000000000000000000000000000000000000000000000000000000002, // sign with operator private key, i.e. 2
+            2, // sign with operator private key, i.e. 2
             req
         );
 
@@ -190,12 +185,13 @@ contract BenchmarkPaymentsGatewayTest is Test {
         req.tokenAddress = address(0);
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
+        req.expirationTimestamp = 1000;
         req.data = targetCalldata;
         req.payouts = payouts;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            0x0000000000000000000000000000000000000000000000000000000000000002, // sign with operator private key, i.e. 2
+            2, // sign with operator private key, i.e. 2
             req
         );
 
