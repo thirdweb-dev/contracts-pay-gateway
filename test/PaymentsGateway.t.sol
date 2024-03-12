@@ -164,10 +164,10 @@ contract PaymentsGatewayTest is Test {
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Test `startTransfer`
+                    Test `buyToken`
     //////////////////////////////////////////////////////////////*/
 
-    function test_startTransfer_erc20() public {
+    function test_buyToken_erc20() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
@@ -203,7 +203,7 @@ contract PaymentsGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.startTransfer(req, _signature);
+        gateway.buyToken(req, _signature);
 
         // check balances after transaction
         assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + (sendValue * ownerFeeBps) / 10_000);
@@ -212,7 +212,7 @@ contract PaymentsGatewayTest is Test {
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
-    function test_startTransfer_nativeToken() public {
+    function test_buyToken_nativeToken() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(0), sendValue, "");
@@ -253,7 +253,7 @@ contract PaymentsGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.startTransfer{ value: sendValueWithFees }(req, _signature);
+        gateway.buyToken{ value: sendValueWithFees }(req, _signature);
 
         // check balances after transaction
         assertEq(owner.balance, ownerBalanceBefore + (sendValue * ownerFeeBps) / 10_000);
@@ -262,7 +262,7 @@ contract PaymentsGatewayTest is Test {
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
-    function test_startTransfer_events() public {
+    function test_buyToken_events() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
@@ -294,10 +294,10 @@ contract PaymentsGatewayTest is Test {
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
         emit TransferStart(req.clientId, sender, _transactionId, req.tokenAddress, req.tokenAmount);
-        gateway.startTransfer(req, _signature);
+        gateway.buyToken(req, _signature);
     }
 
-    function test_revert_startTransfer_invalidSignature() public {
+    function test_revert_buyToken_invalidSignature() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
@@ -328,10 +328,10 @@ contract PaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(PaymentsGateway.PaymentsGatewayVerificationFailed.selector));
-        gateway.startTransfer(req, _signature);
+        gateway.buyToken(req, _signature);
     }
 
-    function test_revert_startTransfer_requestExpired() public {
+    function test_revert_buyToken_requestExpired() public {
         uint256 sendValue = 1 ether;
         bytes memory targetCalldata = "";
 
@@ -357,7 +357,7 @@ contract PaymentsGatewayTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PaymentsGateway.PaymentsGatewayRequestExpired.selector, req.expirationTimestamp)
         );
-        gateway.startTransfer(req, _signature);
+        gateway.buyToken(req, _signature);
     }
 
     // /*///////////////////////////////////////////////////////////////

@@ -193,7 +193,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     }
 
     /**
-      The purpose of startTransfer is to be the entrypoint for all thirdweb pay swap / bridge
+      The purpose of buyToken is to be the entrypoint for all thirdweb pay swap / bridge
       transactions. This function will allow us to standardize the logging and fee splitting across all providers. 
       
       Requirements:
@@ -203,7 +203,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
       4. forward the user funds to the swap provider (forwardAddress)
      */
 
-    function startTransfer(PayRequest calldata req, bytes calldata signature) external payable nonReentrant {
+    function buyToken(PayRequest calldata req, bytes calldata signature) external payable nonReentrant {
         // verify amount
         if (req.tokenAmount == 0) {
             revert PaymentsGatewayInvalidAmount(req.tokenAmount);

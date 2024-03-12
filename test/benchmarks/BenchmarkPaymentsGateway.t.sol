@@ -132,10 +132,10 @@ contract BenchmarkPaymentsGatewayTest is Test {
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Test `startTransfer`
+                    Test `buyToken`
     //////////////////////////////////////////////////////////////*/
 
-    function test_startTransfer_erc20() public {
+    function test_buyToken_erc20() public {
         vm.pauseGasMetering();
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
@@ -167,10 +167,10 @@ contract BenchmarkPaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.resumeGasMetering();
-        gateway.startTransfer(req, _signature);
+        gateway.buyToken(req, _signature);
     }
 
-    function test_startTransfer_nativeToken() public {
+    function test_buyToken_nativeToken() public {
         vm.pauseGasMetering();
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
@@ -198,6 +198,6 @@ contract BenchmarkPaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.resumeGasMetering();
-        gateway.startTransfer{ value: sendValueWithFees }(req, _signature);
+        gateway.buyToken{ value: sendValueWithFees }(req, _signature);
     }
 }
