@@ -2,10 +2,12 @@
 pragma solidity ^0.8.22;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { EIP712 } from "./utils/EIP712.sol";
+
 import { SafeTransferLib } from "./lib/SafeTransferLib.sol";
+import { ECDSA } from "./lib/ECDSA.sol";
 
 /**
   Requirements
@@ -18,13 +20,14 @@ import { SafeTransferLib } from "./lib/SafeTransferLib.sol";
     - add operator role automating withdrawals
  */
 
-contract PaymentsGateway is Ownable, ReentrancyGuard {
-    error PaymentsGatewayInvalidOperator(address operator);
-    error PaymentsGatewayNotOwnerOrOperator(address caller);
+contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
+    using ECDSA for bytes32;
+
     error PaymentsGatewayMismatchedValue(uint256 expected, uint256 actual);
     error PaymentsGatewayInvalidAmount(uint256 amount);
     error PaymentsGatewayVerificationFailed();
     error PaymentsGatewayFailedToForward();
+    error PaymentsGatewayRequestExpired(uint256 expirationTimestamp);
 
     event TransferStart(
         bytes32 indexed clientId,
@@ -64,44 +67,37 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         address payable payoutAddress;
         uint256 feeBPS;
     }
+    struct PayRequest {
+        bytes32 clientId;
+        bytes32 transactionId;
+        address tokenAddress;
+        uint256 tokenAmount;
+        uint256 expirationTimestamp;
+        PayoutInfo[] payouts;
+        address payable forwardAddress;
+        bytes data;
+    }
 
+    bytes32 private constant PAYOUTINFO_TYPEHASH =
+        keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
+    bytes32 private constant REQUEST_TYPEHASH =
+        keccak256(
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+        );
     address private constant THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
     address private constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
-    address private _operator;
 
-    constructor(address contractOwner, address initialOperator) Ownable(contractOwner) {
-        if (initialOperator == address(0)) {
-            revert PaymentsGatewayInvalidOperator(initialOperator);
-        }
-        _operator = initialOperator;
-        emit OperatorChanged(address(0), initialOperator);
-    }
+    /// @dev Mapping from pay request UID => whether the pay request is processed.
+    mapping(bytes32 => bool) private processed;
 
-    modifier onlyOwnerOrOperator() {
-        if (msg.sender != owner() && msg.sender != _operator) {
-            revert PaymentsGatewayNotOwnerOrOperator(msg.sender);
-        }
-        _;
-    }
-
-    function setOperator(address newOperator) public onlyOwnerOrOperator {
-        if (newOperator == address(0)) {
-            revert PaymentsGatewayInvalidOperator(newOperator);
-        }
-        emit OperatorChanged(_operator, newOperator);
-        _operator = newOperator;
-    }
-
-    function getOperator() public view returns (address) {
-        return _operator;
-    }
+    constructor(address contractOwner) Ownable(contractOwner) {}
 
     /* some bridges may refund need a way to get funds back to user */
     function withdrawTo(
         address tokenAddress,
         uint256 tokenAmount,
         address payable receiver
-    ) public onlyOwnerOrOperator nonReentrant {
+    ) public onlyOwner nonReentrant {
         if (_isTokenERC20(tokenAddress)) {
             SafeTransferLib.safeTransferFrom(tokenAddress, address(this), receiver, tokenAmount);
         } else {
@@ -109,7 +105,7 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         }
     }
 
-    function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwnerOrOperator nonReentrant {
+    function withdraw(address tokenAddress, uint256 tokenAmount) external onlyOwner nonReentrant {
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
@@ -158,61 +154,42 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
         return totalFeeAmount;
     }
 
+    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
+        name = "PaymentsGateway";
+        version = "1";
+    }
+
     function _hashPayoutInfo(PayoutInfo[] calldata payouts) private pure returns (bytes32) {
-        bytes32 payoutHash = keccak256(abi.encodePacked("PayoutInfo"));
-        for (uint256 i = 0; i < payouts.length; ++i) {
-            payoutHash = keccak256(
-                abi.encodePacked(payoutHash, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
+        bytes32[] memory payoutsHashes = new bytes32[](payouts.length);
+        for (uint i = 0; i < payouts.length; i++) {
+            payoutsHashes[i] = keccak256(
+                abi.encode(PAYOUTINFO_TYPEHASH, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
             );
         }
-        return payoutHash;
+        return keccak256(abi.encodePacked(payoutsHashes));
     }
 
-    function _verifyTransferStart(
-        bytes32 clientId,
-        bytes32 transactionId,
-        address tokenAddress,
-        uint256 tokenAmount,
-        PayoutInfo[] calldata payouts,
-        address payable forwardAddress,
-        bytes calldata data,
-        bytes calldata signature
-    ) private returns (bool) {
-        bytes32 payoutsHash = _hashPayoutInfo(payouts);
-        bytes32 hash = keccak256(
-            abi.encodePacked(clientId, transactionId, tokenAddress, tokenAmount, payoutsHash, forwardAddress, data)
+    function _verifyTransferStart(PayRequest calldata req, bytes calldata signature) private view returns (bool) {
+        bytes32 payoutsHash = _hashPayoutInfo(req.payouts);
+        bytes32 structHash = keccak256(
+            abi.encode(
+                REQUEST_TYPEHASH,
+                req.clientId,
+                req.transactionId,
+                req.tokenAddress,
+                req.tokenAmount,
+                req.expirationTimestamp,
+                payoutsHash,
+                req.forwardAddress,
+                keccak256(req.data)
+            )
         );
 
-        bytes32 ethSignedMsgHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", hash));
+        bytes32 digest = _hashTypedData(structHash);
+        address recovered = digest.recover(signature);
+        bool valid = recovered == owner() && !processed[req.transactionId];
 
-        (address recovered, bool valid) = _recoverSigner(ethSignedMsgHash, signature);
-
-        return valid && recovered == _operator;
-    }
-
-    function _recoverSigner(bytes32 ethSignedMsgHash, bytes memory signature) public pure returns (address, bool) {
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-
-        if (signature.length != 65) {
-            return (address(0), false);
-        }
-
-        assembly {
-            r := mload(add(signature, 0x20))
-            s := mload(add(signature, 0x40))
-            v := byte(0, mload(add(signature, 0x60)))
-        }
-
-        if (v < 27) {
-            v += 27;
-        }
-
-        address recovered = ecrecover(ethSignedMsgHash, v, r, s);
-        bool valid = (recovered != address(0));
-
-        return (recovered, valid);
+        return valid;
     }
 
     /**
@@ -225,64 +202,53 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
       3. distribute the fees to all the payees (thirdweb, developer, swap provider??)
       4. forward the user funds to the swap provider (forwardAddress)
      */
-    function startTransfer(
-        bytes32 clientId,
-        bytes32 transactionId,
-        address tokenAddress,
-        uint256 tokenAmount,
-        PayoutInfo[] calldata payouts,
-        address payable forwardAddress,
-        bytes calldata data,
-        bytes calldata signature
-    ) external payable nonReentrant {
+
+    function startTransfer(PayRequest calldata req, bytes calldata signature) external payable nonReentrant {
         // verify amount
-        if (tokenAmount == 0) {
-            revert PaymentsGatewayInvalidAmount(tokenAmount);
+        if (req.tokenAmount == 0) {
+            revert PaymentsGatewayInvalidAmount(req.tokenAmount);
+        }
+
+        // verify expiration timestamp
+        if (req.expirationTimestamp < block.timestamp) {
+            revert PaymentsGatewayRequestExpired(req.expirationTimestamp);
         }
 
         // verify data
-        if (
-            !_verifyTransferStart(
-                clientId,
-                transactionId,
-                tokenAddress,
-                tokenAmount,
-                payouts,
-                forwardAddress,
-                data,
-                signature
-            )
-        ) {
+        if (!_verifyTransferStart(req, signature)) {
             revert PaymentsGatewayVerificationFailed();
         }
 
-        if (_isTokenNative(tokenAddress)) {
-            if (msg.value < tokenAmount) {
-                revert PaymentsGatewayMismatchedValue(tokenAmount, msg.value);
+        if (_isTokenNative(req.tokenAddress)) {
+            if (msg.value < req.tokenAmount) {
+                revert PaymentsGatewayMismatchedValue(req.tokenAmount, msg.value);
             }
         }
 
+        // mark the pay request as processed
+        processed[req.transactionId] = true;
+
         // distribute fees
-        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, payouts);
+        uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.tokenAmount, req.payouts);
 
         // determine native value to send
         uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
-        if (_isTokenNative(tokenAddress)) {
+        if (_isTokenNative(req.tokenAddress)) {
             sendValue = msg.value - totalFeeAmount;
 
-            if (sendValue < tokenAmount) {
-                revert PaymentsGatewayMismatchedValue(sendValue, tokenAmount);
+            if (sendValue < req.tokenAmount) {
+                revert PaymentsGatewayMismatchedValue(sendValue, req.tokenAmount);
             }
         }
 
-        if (_isTokenERC20(tokenAddress)) {
+        if (_isTokenERC20(req.tokenAddress)) {
             // pull user funds
-            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
-            SafeTransferLib.safeApprove(tokenAddress, forwardAddress, tokenAmount);
+            SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, address(this), req.tokenAmount);
+            SafeTransferLib.safeApprove(req.tokenAddress, req.forwardAddress, req.tokenAmount);
         }
 
         {
-            (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }(data);
+            (bool success, bytes memory response) = req.forwardAddress.call{ value: sendValue }(req.data);
             if (!success) {
                 // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
                 if (response.length > 0) {
@@ -296,7 +262,7 @@ contract PaymentsGateway is Ownable, ReentrancyGuard {
             }
         }
 
-        emit TransferStart(clientId, msg.sender, transactionId, tokenAddress, tokenAmount);
+        emit TransferStart(req.clientId, msg.sender, req.transactionId, req.tokenAddress, req.tokenAmount);
     }
 
     /**
