@@ -9,17 +9,6 @@ import { EIP712 } from "./utils/EIP712.sol";
 import { SafeTransferLib } from "./lib/SafeTransferLib.sol";
 import { ECDSA } from "./lib/ECDSA.sol";
 
-/**
-  Requirements
-  - easily change fee / payout structure per transaction
-  - easily change provider per transaction
-
-  TODO: 
-    - add receiver function
-    - add thirdweb signer for tamperproofing
-    - add operator role automating withdrawals
- */
-
 contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
 
@@ -45,12 +34,6 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         uint256 tokenAmount
     );
 
-    /**
-    Note: not sure if this is completely necessary
-    estimate the gas on this and remove
-    we could always combine transferFrom logs w/ this transaction
-    where from=Address(this) => to != provider
-    */
     event FeePayout(
         bytes32 indexed clientId,
         address indexed sender,
