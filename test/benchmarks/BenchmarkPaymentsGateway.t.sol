@@ -132,10 +132,10 @@ contract BenchmarkPaymentsGatewayTest is Test {
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Test `buyToken`
+                    Test `initiateTokenPurchase`
     //////////////////////////////////////////////////////////////*/
 
-    function test_buyToken_erc20() public {
+    function test_initiateTokenPurchase_erc20() public {
         vm.pauseGasMetering();
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
@@ -167,14 +167,20 @@ contract BenchmarkPaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.resumeGasMetering();
-        gateway.buyToken(req, _signature);
+        gateway.initiateTokenPurchase(req, _signature);
     }
 
-    function test_buyToken_nativeToken() public {
+    function test_initiateTokenPurchase_nativeToken() public {
         vm.pauseGasMetering();
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
-        bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(0), sendValue, "");
+        bytes memory targetCalldata = _buildMockTargetCalldata(
+            sender,
+            receiver,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            ""
+        );
 
         // create pay request
         PaymentsGateway.PayRequest memory req;
@@ -182,7 +188,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
 
         req.clientId = clientId;
         req.transactionId = _transactionId;
-        req.tokenAddress = address(0);
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
         req.expirationTimestamp = 1000;
@@ -198,6 +204,6 @@ contract BenchmarkPaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.resumeGasMetering();
-        gateway.buyToken{ value: sendValueWithFees }(req, _signature);
+        gateway.initiateTokenPurchase{ value: sendValueWithFees }(req, _signature);
     }
 }

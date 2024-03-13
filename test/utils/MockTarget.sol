@@ -7,7 +7,7 @@ import "lib/forge-std/src/console.sol";
 contract MockTarget {
     event TargetLog(address sender, address receiver, address tokenAddress, uint256 tokenAmount, string message);
 
-    address private constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
+    address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     function decodeData(bytes memory data) private pure returns (address, address, address, uint256, string memory) {
         return abi.decode(data, (address, address, address, uint256, string));
