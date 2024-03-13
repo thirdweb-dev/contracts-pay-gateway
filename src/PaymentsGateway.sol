@@ -67,7 +67,6 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         keccak256(
             "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
         );
-    address private constant THIRDWEB_CLIENT_ID = 0x0000000000000000000000000000000000000000;
     address private constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
 
     /// @dev Mapping from pay request UID => whether the pay request is processed.
