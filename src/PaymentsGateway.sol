@@ -208,7 +208,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     /**
       @notice 
       The purpose of completeTokenPurchase is to provide a forwarding contract call
-      on the destination chain. For LiFi (swap provider), they can only guarantee the toAmount
+      on the destination chain. For some swap providers, they can only guarantee the toAmount
       if we use a contract call. This allows us to call the endTransfer function and forward the 
       funds to the end user. 
 
