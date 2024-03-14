@@ -7,7 +7,7 @@ import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
 
 contract PaymentsGatewayTest is Test {
-    event TransferStart(
+    event TokenPurchaseInitiated(
         bytes32 indexed clientId,
         address indexed sender,
         bytes32 transactionId,
@@ -15,7 +15,7 @@ contract PaymentsGatewayTest is Test {
         uint256 tokenAmount
     );
 
-    event TransferEnd(
+    event TokenPurchaseCompleted(
         bytes32 indexed clientId,
         address indexed receiver,
         bytes32 transactionId,
@@ -164,10 +164,10 @@ contract PaymentsGatewayTest is Test {
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Test `startTransfer`
+                    Test `initiateTokenPurchase`
     //////////////////////////////////////////////////////////////*/
 
-    function test_startTransfer_erc20() public {
+    function test_initiateTokenPurchase_erc20() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
@@ -203,7 +203,7 @@ contract PaymentsGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.startTransfer(req, _signature);
+        gateway.initiateTokenPurchase(req, _signature);
 
         // check balances after transaction
         assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + (sendValue * ownerFeeBps) / 10_000);
@@ -212,10 +212,16 @@ contract PaymentsGatewayTest is Test {
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
-    function test_startTransfer_nativeToken() public {
+    function test_initiateTokenPurchase_nativeToken() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
-        bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(0), sendValue, "");
+        bytes memory targetCalldata = _buildMockTargetCalldata(
+            sender,
+            receiver,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            ""
+        );
 
         // create pay request
         PaymentsGateway.PayRequest memory req;
@@ -223,7 +229,7 @@ contract PaymentsGatewayTest is Test {
 
         req.clientId = clientId;
         req.transactionId = _transactionId;
-        req.tokenAddress = address(0);
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
         req.expirationTimestamp = 1000;
@@ -253,7 +259,7 @@ contract PaymentsGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.startTransfer{ value: sendValueWithFees }(req, _signature);
+        gateway.initiateTokenPurchase{ value: sendValueWithFees }(req, _signature);
 
         // check balances after transaction
         assertEq(owner.balance, ownerBalanceBefore + (sendValue * ownerFeeBps) / 10_000);
@@ -262,7 +268,7 @@ contract PaymentsGatewayTest is Test {
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
-    function test_startTransfer_events() public {
+    function test_initiateTokenPurchase_events() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
@@ -293,11 +299,11 @@ contract PaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
-        emit TransferStart(req.clientId, sender, _transactionId, req.tokenAddress, req.tokenAmount);
-        gateway.startTransfer(req, _signature);
+        emit TokenPurchaseInitiated(req.clientId, sender, _transactionId, req.tokenAddress, req.tokenAmount);
+        gateway.initiateTokenPurchase(req, _signature);
     }
 
-    function test_revert_startTransfer_invalidSignature() public {
+    function test_revert_initiateTokenPurchase_invalidSignature() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
@@ -328,10 +334,10 @@ contract PaymentsGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(PaymentsGateway.PaymentsGatewayVerificationFailed.selector));
-        gateway.startTransfer(req, _signature);
+        gateway.initiateTokenPurchase(req, _signature);
     }
 
-    function test_revert_startTransfer_requestExpired() public {
+    function test_revert_initiateTokenPurchase_requestExpired() public {
         uint256 sendValue = 1 ether;
         bytes memory targetCalldata = "";
 
@@ -357,14 +363,14 @@ contract PaymentsGatewayTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(PaymentsGateway.PaymentsGatewayRequestExpired.selector, req.expirationTimestamp)
         );
-        gateway.startTransfer(req, _signature);
+        gateway.initiateTokenPurchase(req, _signature);
     }
 
     // /*///////////////////////////////////////////////////////////////
-    //                 Test `endTransfer`
+    //                 Test `completeTokenPurchase`
     // //////////////////////////////////////////////////////////////*/
 
-    function test_endTransfer_erc20() public {
+    function test_completeTokenPurchase_erc20() public {
         uint256 sendValue = 1 ether;
 
         // approve amount to gateway contract
@@ -379,7 +385,7 @@ contract PaymentsGatewayTest is Test {
         // send transaction
         bytes32 _transactionId = keccak256("transaction ID");
         vm.prank(sender);
-        gateway.endTransfer(clientId, _transactionId, address(mockERC20), sendValue, receiver);
+        gateway.completeTokenPurchase(clientId, _transactionId, address(mockERC20), sendValue, receiver);
 
         // check balances after transaction
         assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore);
@@ -387,7 +393,7 @@ contract PaymentsGatewayTest is Test {
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
-    function test_endTransfer_nativeToken() public {
+    function test_completeTokenPurchase_nativeToken() public {
         uint256 sendValue = 1 ether;
 
         // state/balances before sending transaction
@@ -398,7 +404,13 @@ contract PaymentsGatewayTest is Test {
         // send transaction
         bytes32 _transactionId = keccak256("transaction ID");
         vm.prank(sender);
-        gateway.endTransfer{ value: sendValue }(clientId, _transactionId, address(0), sendValue, receiver);
+        gateway.completeTokenPurchase{ value: sendValue }(
+            clientId,
+            _transactionId,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            receiver
+        );
 
         // check balances after transaction
         assertEq(owner.balance, ownerBalanceBefore);
@@ -406,7 +418,7 @@ contract PaymentsGatewayTest is Test {
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
-    function test_endTransfer_events() public {
+    function test_completeTokenPurchase_events() public {
         uint256 sendValue = 1 ether;
 
         // approve amount to gateway contract
@@ -417,7 +429,7 @@ contract PaymentsGatewayTest is Test {
         bytes32 _transactionId = keccak256("transaction ID");
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
-        emit TransferEnd(clientId, receiver, _transactionId, address(mockERC20), sendValue);
-        gateway.endTransfer(clientId, _transactionId, address(mockERC20), sendValue, receiver);
+        emit TokenPurchaseCompleted(clientId, receiver, _transactionId, address(mockERC20), sendValue);
+        gateway.completeTokenPurchase(clientId, _transactionId, address(mockERC20), sendValue, receiver);
     }
 }
