@@ -103,6 +103,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     error PaymentsGatewayVerificationFailed();
     error PaymentsGatewayFailedToForward();
     error PaymentsGatewayRequestExpired(uint256 expirationTimestamp);
+    error PaymentsGatewayMsgValueNotZero();
 
     /*///////////////////////////////////////////////////////////////
                                 Constructor
@@ -228,13 +229,16 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
         }
 
         if (_isTokenNative(tokenAddress)) {
-            if (msg.value < tokenAmount) {
+            if (msg.value != tokenAmount) {
                 revert PaymentsGatewayMismatchedValue(tokenAmount, msg.value);
             }
         }
 
         // pull user funds
         if (_isTokenERC20(tokenAddress)) {
+            if (msg.value != 0) {
+                revert PaymentsGatewayMsgValueNotZero();
+            }
             SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, receiverAddress, tokenAmount);
         } else {
             SafeTransferLib.safeTransferETH(receiverAddress, tokenAmount);
