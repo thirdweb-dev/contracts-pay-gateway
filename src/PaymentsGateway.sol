@@ -27,7 +27,7 @@ contract PaymentsGateway is EIP712, Ownable, ReentrancyGuard {
     address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /// @dev Mapping from pay request UID => whether the pay request is processed.
-    mapping(bytes32 => bool) private processed;
+    mapping(bytes32 => bool) public processed;
 
     /**
      *  @notice Info of fee payout recipients.
