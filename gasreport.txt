@@ -1,26 +1,15 @@
 No files changed, compilation skipped
 
-Running 2 tests for test/benchmarks/BenchmarkPaymentsGatewaySplit.t.sol:BenchmarkPaymentsGatewaySplitTest
-[32m[PASS][0m test_startTransfer_erc20() (gas: 131301)
-[32m[PASS][0m test_startTransfer_nativeToken() (gas: 141479)
-Test result: [32mok[0m. [32m2[0m passed; [31m0[0m failed; [33m0[0m skipped; finished in 1.69ms
+Ran 2 tests for test/benchmarks/BenchmarkModularPaymentsGateway.t.sol:BenchmarkModularPaymentsGatewayTest
+[PASS] test_initiateTokenPurchase_erc20() (gas: 181350)
+[PASS] test_initiateTokenPurchase_nativeToken() (gas: 246176)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.83ms (777.63µs CPU time)
 
-Running 2 tests for test/benchmarks/BenchmarkPaymentsGateway.t.sol:BenchmarkPaymentsGatewayTest
-[32m[PASS][0m test_startTransfer_erc20() (gas: 158244)
-[32m[PASS][0m test_startTransfer_nativeToken() (gas: 183194)
-Test result: [32mok[0m. [32m2[0m passed; [31m0[0m failed; [33m0[0m skipped; finished in 1.94ms
+Ran 2 tests for test/benchmarks/BenchmarkPaymentsGateway.t.sol:BenchmarkPaymentsGatewayTest
+[PASS] test_initiateTokenPurchase_erc20() (gas: 150635)
+[PASS] test_initiateTokenPurchase_nativeToken() (gas: 209936)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.83ms (1.01ms CPU time)
 
-Running 2 tests for test/benchmarks/BenchmarkPaymentsGatewayPull.t.sol:BenchmarkPaymentsGatewayPullTest
-[32m[PASS][0m test_startTransfer_erc20() (gas: 184188)
-[32m[PASS][0m test_startTransfer_nativeToken() (gas: 181962)
-Test result: [32mok[0m. [32m2[0m passed; [31m0[0m failed; [33m0[0m skipped; finished in 1.81ms
 
- 
-Ran 3 test suites: [32m6[0m tests passed, [31m0[0m failed, [33m0[0m skipped (6 total tests)
-test_startTransfer_erc20() (gas: 0 (0.000%)) 
-test_startTransfer_nativeToken() (gas: 0 (0.000%)) 
-test_startTransfer_erc20() (gas: 0 (0.000%)) 
-test_startTransfer_nativeToken() (gas: 0 (0.000%)) 
-test_startTransfer_erc20() (gas: 0 (0.000%)) 
-test_startTransfer_nativeToken() (gas: 0 (0.000%)) 
-Overall gas change: 0 (0.000%)
+Ran 2 test suites in 2.70ms (3.65ms CPU time): 4 tests passed, 0 failed, 0 skipped (4 total tests)
+Overall gas change: 0 (NaN%)
