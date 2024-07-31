@@ -5,6 +5,7 @@ pragma solidity ^0.8.22;
 
 import { EIP712 } from "lib/solady/src/utils/EIP712.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
+import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
 import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
 import { ModularExtension } from "lib/modular-contracts/src/ModularExtension.sol";
 import { Ownable } from "lib/solady/src/auth/Ownable.sol";
@@ -27,7 +28,7 @@ library PaymentsGatewayExtensionStorage {
     }
 }
 
-contract PaymentsGatewayExtension is EIP712, ModularExtension {
+contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /*///////////////////////////////////////////////////////////////
@@ -151,7 +152,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice some bridges may refund need a way to get funds back to user
-    function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public {
+    function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public nonReentrant {
         if (_isTokenERC20(tokenAddress)) {
             SafeTransferLib.safeTransfer(tokenAddress, receiver, tokenAmount);
         } else {
@@ -159,7 +160,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension {
         }
     }
 
-    function withdraw(address tokenAddress, uint256 tokenAmount) external {
+    function withdraw(address tokenAddress, uint256 tokenAmount) external nonReentrant {
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
@@ -175,7 +176,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension {
       4. forward the user funds to the swap provider (forwardAddress)
      */
 
-    function initiateTokenPurchase(PayRequest calldata req, bytes calldata signature) external payable {
+    function initiateTokenPurchase(PayRequest calldata req, bytes calldata signature) external payable nonReentrant {
         // verify amount
         if (req.tokenAmount == 0) {
             revert PaymentsGatewayInvalidAmount(req.tokenAmount);
@@ -254,7 +255,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension {
         address tokenAddress,
         uint256 tokenAmount,
         address payable receiverAddress
-    ) external payable {
+    ) external payable nonReentrant {
         if (tokenAmount == 0) {
             revert PaymentsGatewayInvalidAmount(tokenAmount);
         }
