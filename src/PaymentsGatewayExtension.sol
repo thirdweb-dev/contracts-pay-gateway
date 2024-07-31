@@ -38,10 +38,10 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     uint256 private constant _ADMIN_ROLE = 1 << 2;
 
     bytes32 private constant PAYOUTINFO_TYPEHASH =
-        keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
+        keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)");
     bytes32 private constant REQUEST_TYPEHASH =
         keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
         );
     address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
@@ -55,7 +55,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     struct PayoutInfo {
         bytes32 clientId;
         address payable payoutAddress;
-        uint256 feeBPS;
+        uint256 feeAmount;
     }
 
     /**
@@ -106,8 +106,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
         address indexed sender,
         address payoutAddress,
         address tokenAddress,
-        uint256 feeAmount,
-        uint256 feeBPS
+        uint256 feeAmount
     );
 
     /*///////////////////////////////////////////////////////////////
@@ -202,7 +201,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
         PaymentsGatewayExtensionStorage.data().processed[req.transactionId] = true;
 
         // distribute fees
-        uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.tokenAmount, req.payouts);
+        uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.payouts);
 
         // determine native value to send
         uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
@@ -289,41 +288,37 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
         bytes32[] memory payoutsHashes = new bytes32[](payouts.length);
         for (uint i = 0; i < payouts.length; i++) {
             payoutsHashes[i] = keccak256(
-                abi.encode(PAYOUTINFO_TYPEHASH, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeBPS)
+                abi.encode(PAYOUTINFO_TYPEHASH, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeAmount)
             );
         }
         return keccak256(abi.encodePacked(payoutsHashes));
     }
 
-    function _distributeFees(
-        address tokenAddress,
-        uint256 tokenAmount,
-        PayoutInfo[] calldata payouts
-    ) private returns (uint256) {
+    function _distributeFees(address tokenAddress, PayoutInfo[] calldata payouts) private returns (uint256) {
         uint256 totalFeeAmount = 0;
 
         for (uint32 payeeIdx = 0; payeeIdx < payouts.length; payeeIdx++) {
-            uint256 feeAmount = _calculateFee(tokenAmount, payouts[payeeIdx].feeBPS);
-            totalFeeAmount += feeAmount;
+            totalFeeAmount += payouts[payeeIdx].feeAmount;
 
             emit FeePayout(
                 payouts[payeeIdx].clientId,
                 msg.sender,
                 payouts[payeeIdx].payoutAddress,
                 tokenAddress,
-                feeAmount,
-                payouts[payeeIdx].feeBPS
+                payouts[payeeIdx].feeAmount
             );
             if (_isTokenNative(tokenAddress)) {
-                SafeTransferLib.safeTransferETH(payouts[payeeIdx].payoutAddress, feeAmount);
+                SafeTransferLib.safeTransferETH(payouts[payeeIdx].payoutAddress, payouts[payeeIdx].feeAmount);
             } else {
-                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, payouts[payeeIdx].payoutAddress, feeAmount);
+                SafeTransferLib.safeTransferFrom(
+                    tokenAddress,
+                    msg.sender,
+                    payouts[payeeIdx].payoutAddress,
+                    payouts[payeeIdx].feeAmount
+                );
             }
         }
 
-        if (totalFeeAmount > tokenAmount) {
-            revert PaymentsGatewayMismatchedValue(totalFeeAmount, tokenAmount);
-        }
         return totalFeeAmount;
     }
 
@@ -358,10 +353,5 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
 
     function _isTokenNative(address tokenAddress) private pure returns (bool) {
         return tokenAddress == NATIVE_TOKEN_ADDRESS;
-    }
-
-    function _calculateFee(uint256 amount, uint256 feeBPS) private pure returns (uint256) {
-        uint256 feeAmount = (amount * feeBPS) / 10_000;
-        return feeAmount;
     }
 }

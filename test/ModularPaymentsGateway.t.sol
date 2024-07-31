@@ -52,9 +52,9 @@ contract ModularPaymentsGatewayTest is Test {
     bytes32 internal ownerClientId;
     bytes32 internal clientId;
 
-    uint256 internal ownerFeeBps;
-    uint256 internal clientFeeBps;
-    uint256 internal totalFeeBps;
+    uint256 internal ownerFeeAmount;
+    uint256 internal clientFeeAmount;
+    uint256 internal totalFeeAmount;
 
     PaymentsGatewayExtension.PayoutInfo[] internal payouts;
 
@@ -75,8 +75,8 @@ contract ModularPaymentsGatewayTest is Test {
         ownerClientId = keccak256("owner");
         clientId = keccak256("client");
 
-        ownerFeeBps = 200;
-        clientFeeBps = 100;
+        ownerFeeAmount = 20;
+        clientFeeAmount = 10;
 
         // deploy and install extension
         address impl = address(new ModularPaymentsGateway());
@@ -99,20 +99,28 @@ contract ModularPaymentsGatewayTest is Test {
 
         // build payout info
         payouts.push(
-            PaymentsGatewayExtension.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeBPS: ownerFeeBps })
+            PaymentsGatewayExtension.PayoutInfo({
+                clientId: ownerClientId,
+                payoutAddress: owner,
+                feeAmount: ownerFeeAmount
+            })
         );
         payouts.push(
-            PaymentsGatewayExtension.PayoutInfo({ clientId: clientId, payoutAddress: client, feeBPS: clientFeeBps })
+            PaymentsGatewayExtension.PayoutInfo({
+                clientId: clientId,
+                payoutAddress: client,
+                feeAmount: clientFeeAmount
+            })
         );
 
         for (uint256 i = 0; i < payouts.length; i++) {
-            totalFeeBps += payouts[i].feeBPS;
+            totalFeeAmount += payouts[i].feeAmount;
         }
 
         // EIP712
-        typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
+        typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)");
         typehashPayRequest = keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
         );
         nameHash = keccak256(bytes("PaymentsGateway"));
         versionHash = keccak256(bytes("1"));
@@ -142,7 +150,7 @@ contract ModularPaymentsGatewayTest is Test {
         bytes32[] memory payoutsHashes = new bytes32[](_payouts.length);
         for (uint i = 0; i < payouts.length; i++) {
             payoutsHashes[i] = keccak256(
-                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeBPS)
+                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeAmount)
             );
         }
         return keccak256(abi.encodePacked(payoutsHashes));
@@ -183,7 +191,7 @@ contract ModularPaymentsGatewayTest is Test {
 
     function test_initiateTokenPurchase_erc20() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
@@ -220,15 +228,15 @@ contract ModularPaymentsGatewayTest is Test {
         gateway.initiateTokenPurchase(req, _signature);
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + (sendValue * ownerFeeBps) / 10_000);
-        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + (sendValue * clientFeeBps) / 10_000);
+        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFeeAmount);
+        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFeeAmount);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTokenPurchase_nativeToken() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
         bytes memory targetCalldata = _buildMockTargetCalldata(
             sender,
             receiver,
@@ -273,15 +281,15 @@ contract ModularPaymentsGatewayTest is Test {
         gateway.initiateTokenPurchase{ value: sendValueWithFees }(req, _signature);
 
         // check balances after transaction
-        assertEq(owner.balance, ownerBalanceBefore + (sendValue * ownerFeeBps) / 10_000);
-        assertEq(client.balance, clientBalanceBefore + (sendValue * clientFeeBps) / 10_000);
+        assertEq(owner.balance, ownerBalanceBefore + ownerFeeAmount);
+        assertEq(client.balance, clientBalanceBefore + clientFeeAmount);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTokenPurchase_events() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
@@ -316,7 +324,7 @@ contract ModularPaymentsGatewayTest is Test {
 
     function test_revert_initiateTokenPurchase_invalidSignature() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
