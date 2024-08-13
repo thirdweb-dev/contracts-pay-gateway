@@ -10,7 +10,7 @@ import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
 import { ModularExtension } from "lib/modular-contracts/src/ModularExtension.sol";
 import { Ownable } from "lib/solady/src/auth/Ownable.sol";
 
-library PaymentsGatewayExtensionStorage {
+library PayGatewayExtensionStorage {
     /// @custom:storage-location erc7201:payments.gateway.extension
     bytes32 public constant PAYMENTS_GATEWAY_EXTENSION_STORAGE_POSITION =
         keccak256(abi.encode(uint256(keccak256("payments.gateway.extension")) - 1)) & ~bytes32(uint256(0xff));
@@ -28,7 +28,7 @@ library PaymentsGatewayExtensionStorage {
     }
 }
 
-contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
+contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /*///////////////////////////////////////////////////////////////
@@ -113,11 +113,11 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
                                 Errors
     //////////////////////////////////////////////////////////////*/
 
-    error PaymentsGatewayMismatchedValue(uint256 expected, uint256 actual);
-    error PaymentsGatewayInvalidAmount(uint256 amount);
-    error PaymentsGatewayVerificationFailed();
-    error PaymentsGatewayFailedToForward();
-    error PaymentsGatewayRequestExpired(uint256 expirationTimestamp);
+    error PayGatewayMismatchedValue(uint256 expected, uint256 actual);
+    error PayGatewayInvalidAmount(uint256 amount);
+    error PayGatewayVerificationFailed();
+    error PayGatewayFailedToForward();
+    error PayGatewayRequestExpired(uint256 expirationTimestamp);
 
     /*//////////////////////////////////////////////////////////////
                             EXTENSION CONFIG
@@ -178,27 +178,27 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     function initiateTokenPurchase(PayRequest calldata req, bytes calldata signature) external payable nonReentrant {
         // verify amount
         if (req.tokenAmount == 0) {
-            revert PaymentsGatewayInvalidAmount(req.tokenAmount);
+            revert PayGatewayInvalidAmount(req.tokenAmount);
         }
 
         // verify expiration timestamp
         if (req.expirationTimestamp < block.timestamp) {
-            revert PaymentsGatewayRequestExpired(req.expirationTimestamp);
+            revert PayGatewayRequestExpired(req.expirationTimestamp);
         }
 
         // verify data
         if (!_verifyTransferStart(req, signature)) {
-            revert PaymentsGatewayVerificationFailed();
+            revert PayGatewayVerificationFailed();
         }
 
         if (_isTokenNative(req.tokenAddress)) {
             if (msg.value < req.tokenAmount) {
-                revert PaymentsGatewayMismatchedValue(req.tokenAmount, msg.value);
+                revert PayGatewayMismatchedValue(req.tokenAmount, msg.value);
             }
         }
 
         // mark the pay request as processed
-        PaymentsGatewayExtensionStorage.data().processed[req.transactionId] = true;
+        PayGatewayExtensionStorage.data().processed[req.transactionId] = true;
 
         // distribute fees
         uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.payouts);
@@ -209,7 +209,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
             sendValue = msg.value - totalFeeAmount;
 
             if (sendValue < req.tokenAmount) {
-                revert PaymentsGatewayMismatchedValue(sendValue, req.tokenAmount);
+                revert PayGatewayMismatchedValue(sendValue, req.tokenAmount);
             }
         }
 
@@ -229,7 +229,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
                         revert(add(32, response), returndata_size)
                     }
                 } else {
-                    revert PaymentsGatewayFailedToForward();
+                    revert PayGatewayFailedToForward();
                 }
             }
         }
@@ -256,12 +256,12 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
         address payable receiverAddress
     ) external payable nonReentrant {
         if (tokenAmount == 0) {
-            revert PaymentsGatewayInvalidAmount(tokenAmount);
+            revert PayGatewayInvalidAmount(tokenAmount);
         }
 
         if (_isTokenNative(tokenAddress)) {
             if (msg.value < tokenAmount) {
-                revert PaymentsGatewayMismatchedValue(tokenAmount, msg.value);
+                revert PayGatewayMismatchedValue(tokenAmount, msg.value);
             }
         }
 
@@ -280,7 +280,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
-        name = "PaymentsGateway";
+        name = "PayGateway";
         version = "1";
     }
 
@@ -323,7 +323,7 @@ contract PaymentsGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     }
 
     function _verifyTransferStart(PayRequest calldata req, bytes calldata signature) private view returns (bool) {
-        bool processed = PaymentsGatewayExtensionStorage.data().processed[req.transactionId];
+        bool processed = PayGatewayExtensionStorage.data().processed[req.transactionId];
 
         bytes32 payoutsHash = _hashPayoutInfo(req.payouts);
         bytes32 structHash = keccak256(

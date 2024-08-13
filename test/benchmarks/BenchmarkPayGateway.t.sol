@@ -2,14 +2,14 @@
 pragma solidity ^0.8.13;
 
 import { Test, console } from "forge-std/Test.sol";
-import { ModularPaymentsGateway } from "src/ModularPaymentsGateway.sol";
-import { PaymentsGatewayExtension } from "src/PaymentsGatewayExtension.sol";
+import { PayGateway } from "src/PayGateway.sol";
+import { PayGatewayExtension } from "src/PayGatewayExtension.sol";
 import { LibClone } from "lib/solady/src/utils/LibClone.sol";
 import { MockERC20 } from "../utils/MockERC20.sol";
 import { MockTarget } from "../utils/MockTarget.sol";
 
-contract BenchmarkModularPaymentsGatewayTest is Test {
-    PaymentsGatewayExtension internal gateway;
+contract BenchmarkPayGatewayTest is Test {
+    PayGatewayExtension internal gateway;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
@@ -26,7 +26,7 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
     uint256 internal clientFeeAmount;
     uint256 internal totalFeeAmount;
 
-    PaymentsGatewayExtension.PayoutInfo[] internal payouts;
+    PayGatewayExtension.PayoutInfo[] internal payouts;
 
     bytes32 internal typehashPayRequest;
     bytes32 internal typehashPayoutInfo;
@@ -49,16 +49,16 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
         clientFeeAmount = 10;
 
         // deploy and install extension
-        address impl = address(new ModularPaymentsGateway());
-        address extension = address(new PaymentsGatewayExtension());
+        address impl = address(new PayGateway());
+        address extension = address(new PayGatewayExtension());
 
         address[] memory extensions = new address[](1);
         bytes[] memory extensionData = new bytes[](1);
         extensions[0] = address(extension);
         extensionData[0] = "";
 
-        gateway = PaymentsGatewayExtension(LibClone.clone(impl));
-        ModularPaymentsGateway(payable(address(gateway))).initialize(operator, extensions, extensionData);
+        gateway = PayGatewayExtension(LibClone.clone(impl));
+        PayGateway(payable(address(gateway))).initialize(operator, extensions, extensionData);
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -69,18 +69,10 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
 
         // build payout info
         payouts.push(
-            PaymentsGatewayExtension.PayoutInfo({
-                clientId: ownerClientId,
-                payoutAddress: owner,
-                feeAmount: ownerFeeAmount
-            })
+            PayGatewayExtension.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeAmount: ownerFeeAmount })
         );
         payouts.push(
-            PaymentsGatewayExtension.PayoutInfo({
-                clientId: clientId,
-                payoutAddress: client,
-                feeAmount: clientFeeAmount
-            })
+            PayGatewayExtension.PayoutInfo({ clientId: clientId, payoutAddress: client, feeAmount: clientFeeAmount })
         );
 
         for (uint256 i = 0; i < payouts.length; i++) {
@@ -92,7 +84,7 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
         typehashPayRequest = keccak256(
             "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
         );
-        nameHash = keccak256(bytes("PaymentsGateway"));
+        nameHash = keccak256(bytes("PayGateway"));
         versionHash = keccak256(bytes("1"));
         typehashEip712 = keccak256(
             "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -114,7 +106,7 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
     }
 
-    function _hashPayoutInfo(PaymentsGatewayExtension.PayoutInfo[] memory _payouts) private view returns (bytes32) {
+    function _hashPayoutInfo(PayGatewayExtension.PayoutInfo[] memory _payouts) private view returns (bytes32) {
         bytes32 payoutHash = typehashPayoutInfo;
 
         bytes32[] memory payoutsHashes = new bytes32[](_payouts.length);
@@ -128,7 +120,7 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
 
     function _prepareAndSignData(
         uint256 _operatorPrivateKey,
-        PaymentsGatewayExtension.PayRequest memory req
+        PayGatewayExtension.PayRequest memory req
     ) internal view returns (bytes memory signature) {
         bytes memory dataToHash;
         {
@@ -170,7 +162,7 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
         mockERC20.approve(address(gateway), sendValueWithFees);
 
         // create pay request
-        PaymentsGatewayExtension.PayRequest memory req;
+        PayGatewayExtension.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.clientId = clientId;
@@ -207,7 +199,7 @@ contract BenchmarkModularPaymentsGatewayTest is Test {
         );
 
         // create pay request
-        PaymentsGatewayExtension.PayRequest memory req;
+        PayGatewayExtension.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.clientId = clientId;

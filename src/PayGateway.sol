@@ -4,7 +4,7 @@ pragma solidity ^0.8.22;
 import { ModularCore } from "lib/modular-contracts/src/ModularCore.sol";
 import { Initializable } from "lib/solady/src/utils/Initializable.sol";
 
-contract ModularPaymentsGateway is ModularCore, Initializable {
+contract PayGateway is ModularCore, Initializable {
     constructor() {
         _disableInitializers();
     }
