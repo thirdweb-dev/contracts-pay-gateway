@@ -9,17 +9,13 @@ contract PayGateway is ModularCore, Initializable {
         _disableInitializers();
     }
 
-    function initialize(
-        address _owner,
-        address[] memory _extensions,
-        bytes[] memory _extensionInstallData
-    ) external payable {
+    function initialize(address _owner, address[] memory _modules, bytes[] memory _moduleInstallData) external payable {
         _initializeOwner(_owner);
 
-        // Install and initialize extensions
-        require(_extensions.length == _extensionInstallData.length);
-        for (uint256 i = 0; i < _extensions.length; i++) {
-            _installExtension(_extensions[i], _extensionInstallData[i]);
+        // Install and initialize modules
+        require(_modules.length == _moduleInstallData.length);
+        for (uint256 i = 0; i < _modules.length; i++) {
+            _installModule(_modules[i], _moduleInstallData[i]);
         }
     }
 

@@ -3,13 +3,13 @@ pragma solidity ^0.8.13;
 
 import { Test, console } from "forge-std/Test.sol";
 import { PayGateway } from "src/PayGateway.sol";
-import { PayGatewayExtension } from "src/PayGatewayExtension.sol";
+import { PayGatewayModule } from "src/PayGatewayModule.sol";
 import { LibClone } from "lib/solady/src/utils/LibClone.sol";
 import { MockERC20 } from "../utils/MockERC20.sol";
 import { MockTarget } from "../utils/MockTarget.sol";
 
 contract BenchmarkPayGatewayTest is Test {
-    PayGatewayExtension internal gateway;
+    PayGatewayModule internal gateway;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
@@ -26,7 +26,7 @@ contract BenchmarkPayGatewayTest is Test {
     uint256 internal clientFeeAmount;
     uint256 internal totalFeeAmount;
 
-    PayGatewayExtension.PayoutInfo[] internal payouts;
+    PayGatewayModule.PayoutInfo[] internal payouts;
 
     bytes32 internal typehashPayRequest;
     bytes32 internal typehashPayoutInfo;
@@ -48,17 +48,17 @@ contract BenchmarkPayGatewayTest is Test {
         ownerFeeAmount = 20;
         clientFeeAmount = 10;
 
-        // deploy and install extension
+        // deploy and install module
         address impl = address(new PayGateway());
-        address extension = address(new PayGatewayExtension());
+        address module = address(new PayGatewayModule());
 
-        address[] memory extensions = new address[](1);
-        bytes[] memory extensionData = new bytes[](1);
-        extensions[0] = address(extension);
-        extensionData[0] = "";
+        address[] memory modules = new address[](1);
+        bytes[] memory moduleData = new bytes[](1);
+        modules[0] = address(module);
+        moduleData[0] = "";
 
-        gateway = PayGatewayExtension(LibClone.clone(impl));
-        PayGateway(payable(address(gateway))).initialize(operator, extensions, extensionData);
+        gateway = PayGatewayModule(LibClone.clone(impl));
+        PayGateway(payable(address(gateway))).initialize(operator, modules, moduleData);
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -69,10 +69,10 @@ contract BenchmarkPayGatewayTest is Test {
 
         // build payout info
         payouts.push(
-            PayGatewayExtension.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeAmount: ownerFeeAmount })
+            PayGatewayModule.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeAmount: ownerFeeAmount })
         );
         payouts.push(
-            PayGatewayExtension.PayoutInfo({ clientId: clientId, payoutAddress: client, feeAmount: clientFeeAmount })
+            PayGatewayModule.PayoutInfo({ clientId: clientId, payoutAddress: client, feeAmount: clientFeeAmount })
         );
 
         for (uint256 i = 0; i < payouts.length; i++) {
@@ -106,7 +106,7 @@ contract BenchmarkPayGatewayTest is Test {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
     }
 
-    function _hashPayoutInfo(PayGatewayExtension.PayoutInfo[] memory _payouts) private view returns (bytes32) {
+    function _hashPayoutInfo(PayGatewayModule.PayoutInfo[] memory _payouts) private view returns (bytes32) {
         bytes32 payoutHash = typehashPayoutInfo;
 
         bytes32[] memory payoutsHashes = new bytes32[](_payouts.length);
@@ -120,7 +120,7 @@ contract BenchmarkPayGatewayTest is Test {
 
     function _prepareAndSignData(
         uint256 _operatorPrivateKey,
-        PayGatewayExtension.PayRequest memory req
+        PayGatewayModule.PayRequest memory req
     ) internal view returns (bytes memory signature) {
         bytes memory dataToHash;
         {
@@ -162,7 +162,7 @@ contract BenchmarkPayGatewayTest is Test {
         mockERC20.approve(address(gateway), sendValueWithFees);
 
         // create pay request
-        PayGatewayExtension.PayRequest memory req;
+        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.clientId = clientId;
@@ -199,7 +199,7 @@ contract BenchmarkPayGatewayTest is Test {
         );
 
         // create pay request
-        PayGatewayExtension.PayRequest memory req;
+        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.clientId = clientId;

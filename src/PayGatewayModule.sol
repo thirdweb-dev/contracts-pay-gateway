@@ -7,13 +7,13 @@ import { EIP712 } from "lib/solady/src/utils/EIP712.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
 import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
 import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
-import { ModularExtension } from "lib/modular-contracts/src/ModularExtension.sol";
+import { ModularModule } from "lib/modular-contracts/src/ModularModule.sol";
 import { Ownable } from "lib/solady/src/auth/Ownable.sol";
 
-library PayGatewayExtensionStorage {
-    /// @custom:storage-location erc7201:payments.gateway.extension
+library PayGatewayModuleStorage {
+    /// @custom:storage-location erc7201:payments.gateway.module
     bytes32 public constant PAYMENTS_GATEWAY_EXTENSION_STORAGE_POSITION =
-        keccak256(abi.encode(uint256(keccak256("payments.gateway.extension")) - 1)) & ~bytes32(uint256(0xff));
+        keccak256(abi.encode(uint256(keccak256("payments.gateway.module")) - 1)) & ~bytes32(uint256(0xff));
 
     struct Data {
         /// @dev Mapping from pay request UID => whether the pay request is processed.
@@ -28,7 +28,7 @@ library PayGatewayExtensionStorage {
     }
 }
 
-contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
+contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /*///////////////////////////////////////////////////////////////
@@ -78,6 +78,7 @@ contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
         uint256 expirationTimestamp;
         PayoutInfo[] payouts;
         address payable forwardAddress;
+        bool directTransfer;
         bytes data;
     }
 
@@ -124,7 +125,7 @@ contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Returns all implemented callback and fallback functions.
-    function getExtensionConfig() external pure override returns (ExtensionConfig memory config) {
+    function getModuleConfig() external pure override returns (ModuleConfig memory config) {
         config.fallbackFunctions = new FallbackFunction[](5);
 
         config.fallbackFunctions[0] = FallbackFunction({
@@ -198,7 +199,7 @@ contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
         }
 
         // mark the pay request as processed
-        PayGatewayExtensionStorage.data().processed[req.transactionId] = true;
+        PayGatewayModuleStorage.data().processed[req.transactionId] = true;
 
         // distribute fees
         uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.payouts);
@@ -213,23 +214,31 @@ contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
             }
         }
 
-        if (_isTokenERC20(req.tokenAddress)) {
-            // pull user funds
-            SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, address(this), req.tokenAmount);
-            SafeTransferLib.safeApprove(req.tokenAddress, req.forwardAddress, req.tokenAmount);
-        }
+        if (req.directTransfer) {
+            if (_isTokenNative(req.tokenAddress)) {
+                req.forwardAddress.call{ value: sendValue }("");
+            } else {
+                SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
+            }
+        } else {
+            if (_isTokenERC20(req.tokenAddress)) {
+                // pull user funds
+                SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, address(this), req.tokenAmount);
+                SafeTransferLib.safeApprove(req.tokenAddress, req.forwardAddress, req.tokenAmount);
+            }
 
-        {
-            (bool success, bytes memory response) = req.forwardAddress.call{ value: sendValue }(req.data);
-            if (!success) {
-                // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
-                if (response.length > 0) {
-                    assembly {
-                        let returndata_size := mload(response)
-                        revert(add(32, response), returndata_size)
+            {
+                (bool success, bytes memory response) = req.forwardAddress.call{ value: sendValue }(req.data);
+                if (!success) {
+                    // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
+                    if (response.length > 0) {
+                        assembly {
+                            let returndata_size := mload(response)
+                            revert(add(32, response), returndata_size)
+                        }
+                    } else {
+                        revert PayGatewayFailedToForward();
                     }
-                } else {
-                    revert PayGatewayFailedToForward();
                 }
             }
         }
@@ -323,7 +332,7 @@ contract PayGatewayExtension is EIP712, ModularExtension, ReentrancyGuard {
     }
 
     function _verifyTransferStart(PayRequest calldata req, bytes calldata signature) private view returns (bool) {
-        bool processed = PayGatewayExtensionStorage.data().processed[req.transactionId];
+        bool processed = PayGatewayModuleStorage.data().processed[req.transactionId];
 
         bytes32 payoutsHash = _hashPayoutInfo(req.payouts);
         bytes32 structHash = keccak256(
