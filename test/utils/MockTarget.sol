@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "lib/solady/src/tokens/ERC20.sol";
 import "lib/forge-std/src/console.sol";
 
 contract MockTarget {
@@ -23,7 +23,7 @@ contract MockTarget {
         emit TargetLog(sender, receiver, tokenAddress, tokenAmount, message);
         console.log("Transferring %s erc20 tokens from %s to %s", tokenAmount, sender, receiver);
 
-        require(IERC20(tokenAddress).transferFrom(msg.sender, receiver, tokenAmount), "Token transfer failed");
+        require(ERC20(tokenAddress).transferFrom(msg.sender, receiver, tokenAmount), "Token transfer failed");
     }
 
     function performNativeTokenAction(

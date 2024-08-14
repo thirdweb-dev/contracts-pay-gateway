@@ -226,6 +226,51 @@ contract PayGatewayTest is Test {
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
+    function test_initiateTokenPurchase_erc20_directTransfer() public {
+        uint256 sendValue = 1 ether;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
+        bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
+
+        // approve amount to gateway contract
+        vm.prank(sender);
+        mockERC20.approve(address(gateway), sendValueWithFees);
+
+        // create pay request
+        PayGatewayModule.PayRequest memory req;
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        req.clientId = clientId;
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockERC20));
+        req.expirationTimestamp = 1000;
+        req.data = targetCalldata;
+        req.payouts = payouts;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            2, // sign with operator private key, i.e. 2
+            req
+        );
+
+        // state/balances before sending transaction
+        uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
+        uint256 clientBalanceBefore = mockERC20.balanceOf(client);
+        uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
+        uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
+
+        // send transaction
+        vm.prank(sender);
+        gateway.initiateTokenPurchase(req, _signature);
+
+        // check balances after transaction
+        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFeeAmount);
+        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFeeAmount);
+        assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
+        assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
+    }
+
     function test_initiateTokenPurchase_nativeToken() public {
         uint256 sendValue = 1 ether;
         uint256 sendValueWithFees = sendValue + totalFeeAmount;
@@ -246,6 +291,53 @@ contract PayGatewayTest is Test {
         req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
+        req.expirationTimestamp = 1000;
+        req.data = targetCalldata;
+        req.payouts = payouts;
+
+        console.logBytes32(clientId);
+        console.logBytes32(_transactionId);
+        console.log(sendValue);
+        console.log(address(mockTarget));
+        console.logBytes(targetCalldata);
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            2, // sign with operator private key, i.e. 2
+            req
+        );
+
+        // state/balances before sending transaction
+        uint256 ownerBalanceBefore = owner.balance;
+        uint256 clientBalanceBefore = client.balance;
+        uint256 senderBalanceBefore = sender.balance;
+        uint256 receiverBalanceBefore = receiver.balance;
+
+        // send transaction
+        vm.prank(sender);
+        gateway.initiateTokenPurchase{ value: sendValueWithFees }(req, _signature);
+
+        // check balances after transaction
+        assertEq(owner.balance, ownerBalanceBefore + ownerFeeAmount);
+        assertEq(client.balance, clientBalanceBefore + clientFeeAmount);
+        assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
+        assertEq(receiver.balance, receiverBalanceBefore + sendValue);
+    }
+
+    function test_initiateTokenPurchase_nativeToken_directTransfer() public {
+        uint256 sendValue = 1 ether;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
+        bytes memory targetCalldata = "";
+
+        // create pay request
+        PayGatewayModule.PayRequest memory req;
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        req.clientId = clientId;
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(receiver));
         req.expirationTimestamp = 1000;
         req.data = targetCalldata;
         req.payouts = payouts;
