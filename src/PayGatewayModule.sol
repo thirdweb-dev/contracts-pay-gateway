@@ -119,6 +119,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
     error PayGatewayVerificationFailed();
     error PayGatewayFailedToForward();
     error PayGatewayRequestExpired(uint256 expirationTimestamp);
+    error PaymentsGatewayMsgValueNotZero();
 
     /*//////////////////////////////////////////////////////////////
                             EXTENSION CONFIG
@@ -150,6 +151,11 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
     /*///////////////////////////////////////////////////////////////
                         External / public functions
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice check if transaction id has been used / processed
+    function isProcessed(bytes32 transactionId) external view returns (bool) {
+        return PayGatewayModuleStorage.data().processed[transactionId];
+    }
 
     /// @notice some bridges may refund need a way to get funds back to user
     function withdrawTo(address tokenAddress, uint256 tokenAmount, address payable receiver) public nonReentrant {
@@ -269,13 +275,17 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
         }
 
         if (_isTokenNative(tokenAddress)) {
-            if (msg.value < tokenAmount) {
+            if (msg.value != tokenAmount) {
                 revert PayGatewayMismatchedValue(tokenAmount, msg.value);
             }
         }
 
         // pull user funds
         if (_isTokenERC20(tokenAddress)) {
+            if (msg.value != 0) {
+                revert PaymentsGatewayMsgValueNotZero();
+            }
+
             SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, receiverAddress, tokenAmount);
         } else {
             SafeTransferLib.safeTransferETH(receiverAddress, tokenAmount);
