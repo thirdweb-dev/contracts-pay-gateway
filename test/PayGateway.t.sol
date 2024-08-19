@@ -112,7 +112,7 @@ contract PayGatewayTest is Test {
         // EIP712
         typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)");
         typehashPayRequest = keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bool directTransfer,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
         );
         nameHash = keccak256(bytes("PayGateway"));
         versionHash = keccak256(bytes("1"));
@@ -164,6 +164,7 @@ contract PayGatewayTest is Test {
                 req.expirationTimestamp,
                 _payoutsHash,
                 req.forwardAddress,
+                req.directTransfer,
                 keccak256(req.data)
             );
         }
