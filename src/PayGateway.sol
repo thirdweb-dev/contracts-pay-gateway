@@ -2,14 +2,9 @@
 pragma solidity ^0.8.22;
 
 import { ModularCore } from "lib/modular-contracts/src/ModularCore.sol";
-import { Initializable } from "lib/solady/src/utils/Initializable.sol";
 
-contract PayGateway is ModularCore, Initializable {
-    constructor() {
-        _disableInitializers();
-    }
-
-    function initialize(address _owner, address[] memory _modules, bytes[] memory _moduleInstallData) external payable {
+contract PayGateway is ModularCore {
+    constructor(address _owner, address[] memory _modules, bytes[] memory _moduleInstallData) {
         _initializeOwner(_owner);
 
         // Install and initialize modules

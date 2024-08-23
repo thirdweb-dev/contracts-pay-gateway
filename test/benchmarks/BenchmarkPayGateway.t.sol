@@ -49,7 +49,6 @@ contract BenchmarkPayGatewayTest is Test {
         clientFeeAmount = 10;
 
         // deploy and install module
-        address impl = address(new PayGateway());
         address module = address(new PayGatewayModule());
 
         address[] memory modules = new address[](1);
@@ -57,8 +56,7 @@ contract BenchmarkPayGatewayTest is Test {
         modules[0] = address(module);
         moduleData[0] = "";
 
-        gateway = PayGatewayModule(LibClone.clone(impl));
-        PayGateway(payable(address(gateway))).initialize(operator, modules, moduleData);
+        gateway = PayGatewayModule(address(new PayGateway(operator, modules, moduleData)));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
