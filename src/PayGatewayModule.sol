@@ -222,7 +222,19 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
 
         if (req.directTransfer) {
             if (_isTokenNative(req.tokenAddress)) {
-                req.forwardAddress.call{ value: sendValue }("");
+                (bool success, bytes memory response) = req.forwardAddress.call{ value: sendValue }("");
+
+                if (!success) {
+                    // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
+                    if (response.length > 0) {
+                        assembly {
+                            let returndata_size := mload(response)
+                            revert(add(32, response), returndata_size)
+                        }
+                    } else {
+                        revert PayGatewayFailedToForward();
+                    }
+                }
             } else {
                 SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
             }
