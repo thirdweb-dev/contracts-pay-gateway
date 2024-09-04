@@ -199,12 +199,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
             revert PayGatewayVerificationFailed();
         }
 
-        if (_isTokenNative(req.tokenAddress)) {
-            if (msg.value < req.tokenAmount) {
-                revert PayGatewayMismatchedValue(req.tokenAmount, msg.value);
-            }
-        }
-
         // mark the pay request as processed
         PayGatewayModuleStorage.data().processed[req.transactionId] = true;
 
