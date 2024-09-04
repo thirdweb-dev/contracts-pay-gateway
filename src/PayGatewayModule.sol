@@ -237,6 +237,10 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
                     }
                 }
             } else {
+                if (msg.value != 0) {
+                    revert PaymentsGatewayMsgValueNotZero();
+                }
+
                 SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
             }
         } else {
