@@ -217,7 +217,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
             sendValue = msg.value - totalFeeAmount;
 
             if (sendValue < req.tokenAmount) {
-                revert PayGatewayMismatchedValue(sendValue, req.tokenAmount);
+                revert PayGatewayMismatchedValue(req.tokenAmount, sendValue);
             }
         }
 
