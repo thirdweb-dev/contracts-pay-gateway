@@ -20,14 +20,6 @@ contract PayGatewayTest is Test {
         uint256 tokenAmount
     );
 
-    event TokenPurchaseCompleted(
-        bytes32 indexed clientId,
-        address indexed receiver,
-        bytes32 transactionId,
-        address tokenAddress,
-        uint256 tokenAmount
-    );
-
     event FeePayout(
         bytes32 indexed clientId,
         address indexed sender,
@@ -466,72 +458,5 @@ contract PayGatewayTest is Test {
             abi.encodeWithSelector(PayGatewayModule.PayGatewayRequestExpired.selector, req.expirationTimestamp)
         );
         gateway.initiateTokenPurchase(req, _signature);
-    }
-
-    // /*///////////////////////////////////////////////////////////////
-    //                 Test `completeTokenPurchase`
-    // //////////////////////////////////////////////////////////////*/
-
-    function test_completeTokenPurchase_erc20() public {
-        uint256 sendValue = 1 ether;
-
-        // approve amount to gateway contract
-        vm.prank(sender);
-        mockERC20.approve(address(gateway), sendValue);
-
-        // state/balances before sending transaction
-        uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
-        uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
-        uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
-
-        // send transaction
-        bytes32 _transactionId = keccak256("transaction ID");
-        vm.prank(sender);
-        gateway.completeTokenPurchase(clientId, _transactionId, address(mockERC20), sendValue, receiver);
-
-        // check balances after transaction
-        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore);
-        assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValue);
-        assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
-    }
-
-    function test_completeTokenPurchase_nativeToken() public {
-        uint256 sendValue = 1 ether;
-
-        // state/balances before sending transaction
-        uint256 ownerBalanceBefore = owner.balance;
-        uint256 senderBalanceBefore = sender.balance;
-        uint256 receiverBalanceBefore = receiver.balance;
-
-        // send transaction
-        bytes32 _transactionId = keccak256("transaction ID");
-        vm.prank(sender);
-        gateway.completeTokenPurchase{ value: sendValue }(
-            clientId,
-            _transactionId,
-            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
-            sendValue,
-            receiver
-        );
-
-        // check balances after transaction
-        assertEq(owner.balance, ownerBalanceBefore);
-        assertEq(sender.balance, senderBalanceBefore - sendValue);
-        assertEq(receiver.balance, receiverBalanceBefore + sendValue);
-    }
-
-    function test_completeTokenPurchase_events() public {
-        uint256 sendValue = 1 ether;
-
-        // approve amount to gateway contract
-        vm.prank(sender);
-        mockERC20.approve(address(gateway), sendValue);
-
-        // send transaction
-        bytes32 _transactionId = keccak256("transaction ID");
-        vm.prank(sender);
-        vm.expectEmit(true, true, false, true);
-        emit TokenPurchaseCompleted(clientId, receiver, _transactionId, address(mockERC20), sendValue);
-        gateway.completeTokenPurchase(clientId, _transactionId, address(mockERC20), sendValue, receiver);
     }
 }

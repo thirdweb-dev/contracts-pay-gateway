@@ -95,14 +95,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
         uint256 tokenAmount
     );
 
-    event TokenPurchaseCompleted(
-        bytes32 indexed clientId,
-        address indexed receiver,
-        bytes32 transactionId,
-        address tokenAddress,
-        uint256 tokenAmount
-    );
-
     event FeePayout(
         bytes32 indexed clientId,
         address indexed sender,
@@ -128,7 +120,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
 
     /// @notice Returns all implemented callback and fallback functions.
     function getModuleConfig() external pure override returns (ModuleConfig memory config) {
-        config.fallbackFunctions = new FallbackFunction[](6);
+        config.fallbackFunctions = new FallbackFunction[](5);
 
         config.fallbackFunctions[0] = FallbackFunction({
             selector: this.withdrawTo.selector,
@@ -142,12 +134,8 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
             selector: this.initiateTokenPurchase.selector,
             permissionBits: 0
         });
-        config.fallbackFunctions[3] = FallbackFunction({
-            selector: this.completeTokenPurchase.selector,
-            permissionBits: 0
-        });
-        config.fallbackFunctions[4] = FallbackFunction({ selector: this.eip712Domain.selector, permissionBits: 0 });
-        config.fallbackFunctions[5] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
+        config.fallbackFunctions[3] = FallbackFunction({ selector: this.eip712Domain.selector, permissionBits: 0 });
+        config.fallbackFunctions[4] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -262,48 +250,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
         }
 
         emit TokenPurchaseInitiated(req.clientId, msg.sender, req.transactionId, req.tokenAddress, req.tokenAmount);
-    }
-
-    /**
-      @notice 
-      The purpose of completeTokenPurchase is to provide a forwarding contract call
-      on the destination chain. For some swap providers, they can only guarantee the toAmount
-      if we use a contract call. This allows us to call the endTransfer function and forward the 
-      funds to the end user. 
-
-      Requirements:
-      1. Log the transfer end
-      2. forward the user funds
-     */
-    function completeTokenPurchase(
-        bytes32 clientId,
-        bytes32 transactionId,
-        address tokenAddress,
-        uint256 tokenAmount,
-        address payable receiverAddress
-    ) external payable nonReentrant {
-        if (tokenAmount == 0) {
-            revert PayGatewayInvalidAmount(tokenAmount);
-        }
-
-        if (_isTokenNative(tokenAddress)) {
-            if (msg.value != tokenAmount) {
-                revert PayGatewayMismatchedValue(tokenAmount, msg.value);
-            }
-        }
-
-        // pull user funds
-        if (_isTokenERC20(tokenAddress)) {
-            if (msg.value != 0) {
-                revert PayGatewayMsgValueNotZero();
-            }
-
-            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, receiverAddress, tokenAmount);
-        } else {
-            SafeTransferLib.safeTransferETH(receiverAddress, tokenAmount);
-        }
-
-        emit TokenPurchaseCompleted(clientId, receiverAddress, transactionId, tokenAddress, tokenAmount);
     }
 
     /*///////////////////////////////////////////////////////////////
