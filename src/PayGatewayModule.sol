@@ -11,9 +11,9 @@ import { ModularModule } from "lib/modular-contracts/src/ModularModule.sol";
 import { Ownable } from "lib/solady/src/auth/Ownable.sol";
 
 library PayGatewayModuleStorage {
-    /// @custom:storage-location erc7201:payments.gateway.module
-    bytes32 public constant PAYMENTS_GATEWAY_EXTENSION_STORAGE_POSITION =
-        keccak256(abi.encode(uint256(keccak256("payments.gateway.module")) - 1)) & ~bytes32(uint256(0xff));
+    /// @custom:storage-location erc7201:pay.gateway.module
+    bytes32 public constant PAY_GATEWAY_EXTENSION_STORAGE_POSITION =
+        keccak256(abi.encode(uint256(keccak256("pay.gateway.module")) - 1)) & ~bytes32(uint256(0xff));
 
     struct Data {
         /// @dev Mapping from pay request UID => whether the pay request is processed.
@@ -21,7 +21,7 @@ library PayGatewayModuleStorage {
     }
 
     function data() internal pure returns (Data storage data_) {
-        bytes32 position = PAYMENTS_GATEWAY_EXTENSION_STORAGE_POSITION;
+        bytes32 position = PAY_GATEWAY_EXTENSION_STORAGE_POSITION;
         assembly {
             data_.slot := position
         }
@@ -119,7 +119,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
     error PayGatewayVerificationFailed();
     error PayGatewayFailedToForward();
     error PayGatewayRequestExpired(uint256 expirationTimestamp);
-    error PaymentsGatewayMsgValueNotZero();
+    error PayGatewayMsgValueNotZero();
 
     /*//////////////////////////////////////////////////////////////
                             EXTENSION CONFIG
@@ -238,7 +238,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
                 }
             } else {
                 if (msg.value != 0) {
-                    revert PaymentsGatewayMsgValueNotZero();
+                    revert PayGatewayMsgValueNotZero();
                 }
 
                 SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
@@ -300,7 +300,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
         // pull user funds
         if (_isTokenERC20(tokenAddress)) {
             if (msg.value != 0) {
-                revert PaymentsGatewayMsgValueNotZero();
+                revert PayGatewayMsgValueNotZero();
             }
 
             SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, receiverAddress, tokenAmount);
