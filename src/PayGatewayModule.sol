@@ -50,7 +50,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
      *
      *  @param clientId ClientId of fee recipient
      *  @param payoutAddress Recipient address
-     *  @param feeBPS The fee basis points to be charged. Max = 10000 (10000 = 100%, 1000 = 10%)
+     *  @param feeAmount The fee amount to be paid to each recipient
      */
     struct PayoutInfo {
         bytes32 clientId;
@@ -68,6 +68,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
      *  @param expirationTimestamp The unix timestamp at which the request expires
      *  @param payouts Array of Payout struct - containing fee recipients' info
      *  @param forwardAddress Address of swap provider contract
+     *  @param directTransfer Whether the payment is a direct transfer to another address
      *  @param data Calldata for swap provider
      */
     struct PayRequest {
