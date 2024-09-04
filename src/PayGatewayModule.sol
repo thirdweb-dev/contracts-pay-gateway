@@ -127,7 +127,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
 
     /// @notice Returns all implemented callback and fallback functions.
     function getModuleConfig() external pure override returns (ModuleConfig memory config) {
-        config.fallbackFunctions = new FallbackFunction[](5);
+        config.fallbackFunctions = new FallbackFunction[](6);
 
         config.fallbackFunctions[0] = FallbackFunction({
             selector: this.withdrawTo.selector,
@@ -146,6 +146,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
             permissionBits: 0
         });
         config.fallbackFunctions[4] = FallbackFunction({ selector: this.eip712Domain.selector, permissionBits: 0 });
+        config.fallbackFunctions[5] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
     }
 
     /*///////////////////////////////////////////////////////////////
