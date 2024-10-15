@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import { Test, console, console2 } from "forge-std/Test.sol";
-import { PaymentsGateway } from "src/PaymentsGateway.sol";
+import { Test, console } from "forge-std/Test.sol";
+import { PayGateway } from "src/PayGateway.sol";
+import { PayGatewayModule } from "src/PayGatewayModule.sol";
+import { LibClone } from "lib/solady/src/utils/LibClone.sol";
 import { MockERC20 } from "../utils/MockERC20.sol";
 import { MockTarget } from "../utils/MockTarget.sol";
 
-contract BenchmarkPaymentsGatewayTest is Test {
-    PaymentsGateway internal gateway;
+contract BenchmarkPayGatewayTest is Test {
+    PayGatewayModule internal gateway;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
@@ -20,11 +22,11 @@ contract BenchmarkPaymentsGatewayTest is Test {
     bytes32 internal ownerClientId;
     bytes32 internal clientId;
 
-    uint256 internal ownerFeeBps;
-    uint256 internal clientFeeBps;
-    uint256 internal totalFeeBps;
+    uint256 internal ownerFeeAmount;
+    uint256 internal clientFeeAmount;
+    uint256 internal totalFeeAmount;
 
-    PaymentsGateway.PayoutInfo[] internal payouts;
+    PayGatewayModule.PayoutInfo[] internal payouts;
 
     bytes32 internal typehashPayRequest;
     bytes32 internal typehashPayoutInfo;
@@ -43,10 +45,19 @@ contract BenchmarkPaymentsGatewayTest is Test {
         ownerClientId = keccak256("owner");
         clientId = keccak256("client");
 
-        ownerFeeBps = 200;
-        clientFeeBps = 100;
+        ownerFeeAmount = 20;
+        clientFeeAmount = 10;
 
-        gateway = new PaymentsGateway(operator);
+        // deploy and install module
+        address module = address(new PayGatewayModule());
+
+        address[] memory modules = new address[](1);
+        bytes[] memory moduleData = new bytes[](1);
+        modules[0] = address(module);
+        moduleData[0] = "";
+
+        gateway = PayGatewayModule(address(new PayGateway(operator, modules, moduleData)));
+
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
 
@@ -56,19 +67,22 @@ contract BenchmarkPaymentsGatewayTest is Test {
 
         // build payout info
         payouts.push(
-            PaymentsGateway.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeBPS: ownerFeeBps })
+            PayGatewayModule.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeAmount: ownerFeeAmount })
         );
-        payouts.push(PaymentsGateway.PayoutInfo({ clientId: clientId, payoutAddress: client, feeBPS: clientFeeBps }));
+        payouts.push(
+            PayGatewayModule.PayoutInfo({ clientId: clientId, payoutAddress: client, feeAmount: clientFeeAmount })
+        );
+
         for (uint256 i = 0; i < payouts.length; i++) {
-            totalFeeBps += payouts[i].feeBPS;
+            totalFeeAmount += payouts[i].feeAmount;
         }
 
         // EIP712
-        typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)");
+        typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)");
         typehashPayRequest = keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeBPS)"
+            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bool directTransfer,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
         );
-        nameHash = keccak256(bytes("PaymentsGateway"));
+        nameHash = keccak256(bytes("PayGateway"));
         versionHash = keccak256(bytes("1"));
         typehashEip712 = keccak256(
             "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -90,13 +104,13 @@ contract BenchmarkPaymentsGatewayTest is Test {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
     }
 
-    function _hashPayoutInfo(PaymentsGateway.PayoutInfo[] memory _payouts) private view returns (bytes32) {
+    function _hashPayoutInfo(PayGatewayModule.PayoutInfo[] memory _payouts) private view returns (bytes32) {
         bytes32 payoutHash = typehashPayoutInfo;
 
         bytes32[] memory payoutsHashes = new bytes32[](_payouts.length);
         for (uint i = 0; i < payouts.length; i++) {
             payoutsHashes[i] = keccak256(
-                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeBPS)
+                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeAmount)
             );
         }
         return keccak256(abi.encodePacked(payoutsHashes));
@@ -104,7 +118,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
 
     function _prepareAndSignData(
         uint256 _operatorPrivateKey,
-        PaymentsGateway.PayRequest memory req
+        PayGatewayModule.PayRequest memory req
     ) internal view returns (bytes memory signature) {
         bytes memory dataToHash;
         {
@@ -118,6 +132,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
                 req.expirationTimestamp,
                 _payoutsHash,
                 req.forwardAddress,
+                req.directTransfer,
                 keccak256(req.data)
             );
         }
@@ -138,7 +153,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
     function test_initiateTokenPurchase_erc20() public {
         vm.pauseGasMetering();
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
@@ -146,7 +161,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
         mockERC20.approve(address(gateway), sendValueWithFees);
 
         // create pay request
-        PaymentsGateway.PayRequest memory req;
+        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.clientId = clientId;
@@ -173,7 +188,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
     function test_initiateTokenPurchase_nativeToken() public {
         vm.pauseGasMetering();
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + (sendValue * totalFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount;
         bytes memory targetCalldata = _buildMockTargetCalldata(
             sender,
             receiver,
@@ -183,7 +198,7 @@ contract BenchmarkPaymentsGatewayTest is Test {
         );
 
         // create pay request
-        PaymentsGateway.PayRequest memory req;
+        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.clientId = clientId;

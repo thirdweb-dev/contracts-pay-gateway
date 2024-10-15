@@ -13,7 +13,6 @@ test = 'test'
 out = 'artifacts_forge'
 libs = ["lib"]
 remappings = [
-  '@openzeppelin/contracts=lib/openzeppelin-contracts/contracts',
   '@ds-test=lib/ds-test/src/',
   '@std=lib/forge-std/src/',
 ]
