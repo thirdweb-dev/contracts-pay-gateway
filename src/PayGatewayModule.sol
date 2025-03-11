@@ -3,10 +3,8 @@ pragma solidity ^0.8.22;
 
 /// @author thirdweb
 
-import { EIP712 } from "lib/solady/src/utils/EIP712.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
 import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
-import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
 import { ModularModule } from "lib/modular-contracts/src/ModularModule.sol";
 import { Ownable } from "lib/solady/src/auth/Ownable.sol";
 
@@ -28,21 +26,12 @@ library PayGatewayModuleStorage {
     }
 }
 
-contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
-    using ECDSA for bytes32;
-
+contract PayGatewayModule is ModularModule, ReentrancyGuard {
     /*///////////////////////////////////////////////////////////////
                         State, constants, structs
     //////////////////////////////////////////////////////////////*/
 
     uint256 private constant _ADMIN_ROLE = 1 << 2;
-
-    bytes32 private constant PAYOUTINFO_TYPEHASH =
-        keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)");
-    bytes32 private constant REQUEST_TYPEHASH =
-        keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bool directTransfer,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
-        );
     address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /**
@@ -76,7 +65,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
         bytes32 transactionId;
         address tokenAddress;
         uint256 tokenAmount;
-        uint256 expirationTimestamp;
         PayoutInfo[] payouts;
         address payable forwardAddress;
         bool directTransfer;
@@ -109,7 +97,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
 
     error PayGatewayMismatchedValue(uint256 expected, uint256 actual);
     error PayGatewayInvalidAmount(uint256 amount);
-    error PayGatewayVerificationFailed();
     error PayGatewayFailedToForward();
     error PayGatewayRequestExpired(uint256 expirationTimestamp);
     error PayGatewayMsgValueNotZero();
@@ -120,7 +107,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
 
     /// @notice Returns all implemented callback and fallback functions.
     function getModuleConfig() external pure override returns (ModuleConfig memory config) {
-        config.fallbackFunctions = new FallbackFunction[](5);
+        config.fallbackFunctions = new FallbackFunction[](4);
 
         config.fallbackFunctions[0] = FallbackFunction({
             selector: this.withdrawTo.selector,
@@ -134,8 +121,7 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
             selector: this.initiateTokenPurchase.selector,
             permissionBits: 0
         });
-        config.fallbackFunctions[3] = FallbackFunction({ selector: this.eip712Domain.selector, permissionBits: 0 });
-        config.fallbackFunctions[4] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
+        config.fallbackFunctions[3] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -172,20 +158,10 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
       4. forward the user funds to the swap provider (forwardAddress)
      */
 
-    function initiateTokenPurchase(PayRequest calldata req, bytes calldata signature) external payable nonReentrant {
+    function initiateTokenPurchase(PayRequest calldata req) external payable nonReentrant {
         // verify amount
         if (req.tokenAmount == 0) {
             revert PayGatewayInvalidAmount(req.tokenAmount);
-        }
-
-        // verify expiration timestamp
-        if (req.expirationTimestamp < block.timestamp) {
-            revert PayGatewayRequestExpired(req.expirationTimestamp);
-        }
-
-        // verify data
-        if (!_verifyTransferStart(req, signature)) {
-            revert PayGatewayVerificationFailed();
         }
 
         // mark the pay request as processed
@@ -256,21 +232,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
-        name = "PayGateway";
-        version = "1";
-    }
-
-    function _hashPayoutInfo(PayoutInfo[] calldata payouts) private pure returns (bytes32) {
-        bytes32[] memory payoutsHashes = new bytes32[](payouts.length);
-        for (uint i = 0; i < payouts.length; i++) {
-            payoutsHashes[i] = keccak256(
-                abi.encode(PAYOUTINFO_TYPEHASH, payouts[i].clientId, payouts[i].payoutAddress, payouts[i].feeAmount)
-            );
-        }
-        return keccak256(abi.encodePacked(payoutsHashes));
-    }
-
     function _distributeFees(address tokenAddress, PayoutInfo[] calldata payouts) private returns (uint256) {
         uint256 totalFeeAmount = 0;
 
@@ -297,32 +258,6 @@ contract PayGatewayModule is EIP712, ModularModule, ReentrancyGuard {
         }
 
         return totalFeeAmount;
-    }
-
-    function _verifyTransferStart(PayRequest calldata req, bytes calldata signature) private view returns (bool) {
-        bool processed = PayGatewayModuleStorage.data().processed[req.transactionId];
-
-        bytes32 payoutsHash = _hashPayoutInfo(req.payouts);
-        bytes32 structHash = keccak256(
-            abi.encode(
-                REQUEST_TYPEHASH,
-                req.clientId,
-                req.transactionId,
-                req.tokenAddress,
-                req.tokenAmount,
-                req.expirationTimestamp,
-                payoutsHash,
-                req.forwardAddress,
-                req.directTransfer,
-                keccak256(req.data)
-            )
-        );
-
-        bytes32 digest = _hashTypedData(structHash);
-        address recovered = digest.recover(signature);
-        bool valid = recovered == Ownable(address(this)).owner() && !processed;
-
-        return valid;
     }
 
     function _isTokenERC20(address tokenAddress) private pure returns (bool) {
