@@ -77,7 +77,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
 
     /// @notice Returns all implemented callback and fallback functions.
     function getModuleConfig() external pure override returns (ModuleConfig memory config) {
-        config.fallbackFunctions = new FallbackFunction[](6);
+        config.fallbackFunctions = new FallbackFunction[](8);
 
         config.fallbackFunctions[0] = FallbackFunction({
             selector: this.withdrawTo.selector,
@@ -100,6 +100,8 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             selector: this.setFeeInfo.selector,
             permissionBits: _ADMIN_ROLE
         });
+        config.fallbackFunctions[6] = FallbackFunction({ selector: this.getOwnerFeeInfo.selector, permissionBits: 0 });
+        config.fallbackFunctions[7] = FallbackFunction({ selector: this.getFeeInfo.selector, permissionBits: 0 });
     }
 
     /*///////////////////////////////////////////////////////////////
