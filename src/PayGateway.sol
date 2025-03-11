@@ -14,6 +14,8 @@ contract PayGateway is ModularCore {
         }
     }
 
+    receive() external payable {}
+
     function getSupportedCallbackFunctions()
         public
         pure
