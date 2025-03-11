@@ -47,30 +47,6 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         uint256 feeAmount;
     }
 
-    /**
-     *  @notice The body of a request to purchase tokens.
-     *
-     *  @param clientId Thirdweb clientId for logging attribution data
-     *  @param transactionId Acts as a uid and a key to lookup associated swap provider
-     *  @param tokenAddress Address of the currency used for purchase
-     *  @param tokenAmount Currency amount being sent
-     *  @param expirationTimestamp The unix timestamp at which the request expires
-     *  @param payouts Array of Payout struct - containing fee recipients' info
-     *  @param forwardAddress Address of swap provider contract
-     *  @param directTransfer Whether the payment is a direct transfer to another address
-     *  @param data Calldata for swap provider
-     */
-    struct PayRequest {
-        bytes32 clientId;
-        bytes32 transactionId;
-        address tokenAddress;
-        uint256 tokenAmount;
-        PayoutInfo[] payouts;
-        address payable forwardAddress;
-        bool directTransfer;
-        bytes data;
-    }
-
     /*///////////////////////////////////////////////////////////////
                                 Events
     //////////////////////////////////////////////////////////////*/
@@ -157,32 +133,43 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
       3. distribute the fees to all the payees (thirdweb, developer, swap provider (?))
       4. forward the user funds to the swap provider (forwardAddress)
      */
-
-    function initiateTokenPurchase(PayRequest calldata req) external payable nonReentrant {
+    function initiateTokenPurchase(
+        bytes32 clientId,
+        bytes32 transactionId,
+        address tokenAddress,
+        uint256 tokenAmount,
+        address payable forwardAddress,
+        bool directTransfer,
+        PayoutInfo calldata payout,
+        bytes calldata callData,
+        bytes calldata extraData
+    ) external payable nonReentrant {
         // verify amount
-        if (req.tokenAmount == 0) {
-            revert PayGatewayInvalidAmount(req.tokenAmount);
+        if (tokenAmount == 0) {
+            revert PayGatewayInvalidAmount(tokenAmount);
         }
-
-        // mark the pay request as processed
-        PayGatewayModuleStorage.data().processed[req.transactionId] = true;
-
-        // distribute fees
-        uint256 totalFeeAmount = _distributeFees(req.tokenAddress, req.payouts);
-
-        // determine native value to send
         uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
-        if (_isTokenNative(req.tokenAddress)) {
-            sendValue = msg.value - totalFeeAmount;
 
-            if (sendValue < req.tokenAmount) {
-                revert PayGatewayMismatchedValue(req.tokenAmount, sendValue);
+        {
+            // mark the pay request as processed
+            PayGatewayModuleStorage.data().processed[transactionId] = true;
+
+            // distribute fees
+            uint256 totalFeeAmount = _distributeFees(tokenAddress, payout);
+
+            // determine native value to send
+            if (_isTokenNative(tokenAddress)) {
+                sendValue = msg.value - totalFeeAmount;
+
+                if (sendValue < tokenAmount) {
+                    revert PayGatewayMismatchedValue(tokenAmount, sendValue);
+                }
             }
         }
 
-        if (req.directTransfer) {
-            if (_isTokenNative(req.tokenAddress)) {
-                (bool success, bytes memory response) = req.forwardAddress.call{ value: sendValue }("");
+        if (directTransfer) {
+            if (_isTokenNative(tokenAddress)) {
+                (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }("");
 
                 if (!success) {
                     // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
@@ -200,17 +187,17 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
                     revert PayGatewayMsgValueNotZero();
                 }
 
-                SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
+                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, forwardAddress, tokenAmount);
             }
         } else {
-            if (_isTokenERC20(req.tokenAddress)) {
+            if (_isTokenERC20(tokenAddress)) {
                 // pull user funds
-                SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, address(this), req.tokenAmount);
-                SafeTransferLib.safeApprove(req.tokenAddress, req.forwardAddress, req.tokenAmount);
+                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
+                SafeTransferLib.safeApprove(tokenAddress, forwardAddress, tokenAmount);
             }
 
             {
-                (bool success, bytes memory response) = req.forwardAddress.call{ value: sendValue }(req.data);
+                (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }(callData);
                 if (!success) {
                     // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
                     if (response.length > 0) {
@@ -225,38 +212,23 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             }
         }
 
-        emit TokenPurchaseInitiated(req.clientId, msg.sender, req.transactionId, req.tokenAddress, req.tokenAmount);
+        emit TokenPurchaseInitiated(clientId, msg.sender, transactionId, tokenAddress, tokenAmount);
     }
 
     /*///////////////////////////////////////////////////////////////
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    function _distributeFees(address tokenAddress, PayoutInfo[] calldata payouts) private returns (uint256) {
-        uint256 totalFeeAmount = 0;
+    function _distributeFees(address tokenAddress, PayoutInfo calldata payout) private returns (uint256) {
+        uint256 totalFeeAmount = payout.feeAmount;
 
-        for (uint32 payeeIdx = 0; payeeIdx < payouts.length; payeeIdx++) {
-            totalFeeAmount += payouts[payeeIdx].feeAmount;
+        emit FeePayout(payout.clientId, msg.sender, payout.payoutAddress, tokenAddress, payout.feeAmount);
 
-            emit FeePayout(
-                payouts[payeeIdx].clientId,
-                msg.sender,
-                payouts[payeeIdx].payoutAddress,
-                tokenAddress,
-                payouts[payeeIdx].feeAmount
-            );
-            if (_isTokenNative(tokenAddress)) {
-                SafeTransferLib.safeTransferETH(payouts[payeeIdx].payoutAddress, payouts[payeeIdx].feeAmount);
-            } else {
-                SafeTransferLib.safeTransferFrom(
-                    tokenAddress,
-                    msg.sender,
-                    payouts[payeeIdx].payoutAddress,
-                    payouts[payeeIdx].feeAmount
-                );
-            }
+        if (_isTokenNative(tokenAddress)) {
+            SafeTransferLib.safeTransferETH(payout.payoutAddress, payout.feeAmount);
+        } else {
+            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, payout.payoutAddress, payout.feeAmount);
         }
-
         return totalFeeAmount;
     }
 
