@@ -194,6 +194,18 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         // mark the pay request as processed
         PayGatewayModuleStorage.data().processed[transactionId] = true;
 
+        // distribute fees
+        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, clientIdForFeePayout);
+
+        // determine native value to send
+        if (_isTokenNative(tokenAddress)) {
+            sendValue = msg.value - totalFeeAmount;
+
+            if (sendValue < tokenAmount) {
+                revert PayGatewayMismatchedValue(tokenAmount, sendValue);
+            }
+        }
+
         if (directTransfer) {
             if (_isTokenNative(tokenAddress)) {
                 (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }("");
@@ -217,18 +229,6 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
                 SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, forwardAddress, tokenAmount);
             }
         } else {
-            // distribute fees
-            uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, clientIdForFeePayout);
-
-            // determine native value to send
-            if (_isTokenNative(tokenAddress)) {
-                sendValue = msg.value - totalFeeAmount;
-
-                if (sendValue < tokenAmount) {
-                    revert PayGatewayMismatchedValue(tokenAmount, sendValue);
-                }
-            }
-
             if (!_isTokenNative(tokenAddress)) {
                 // pull user funds
                 SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
