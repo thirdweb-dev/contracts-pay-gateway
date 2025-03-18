@@ -15,8 +15,7 @@ enum FeeType {
 
 struct PayoutInfo {
     address payable payoutAddress;
-    uint256 feeBpsOrAmount;
-    FeeType feeType;
+    uint256 feeBps;
 }
 
 library PayGatewayModuleStorage {
@@ -45,7 +44,6 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     uint256 private constant _ADMIN_ROLE = 1 << 2;
-    uint256 private constant MAX_BPS = 10_000;
     address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     /*///////////////////////////////////////////////////////////////
@@ -126,47 +124,25 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
-    function setOwnerFeeInfo(address payable payoutAddress, uint256 feeBpsOrAmount, FeeType feeType) external {
-        if (feeType == FeeType.Bps && feeBpsOrAmount > MAX_BPS) {
-            revert PayGatewayInvalidFeeBps();
-        }
-
-        PayGatewayModuleStorage.data().ownerFeeInfo = PayoutInfo({
-            payoutAddress: payoutAddress,
-            feeBpsOrAmount: feeBpsOrAmount,
-            feeType: feeType
-        });
+    function setOwnerFeeInfo(address payable payoutAddress, uint256 feeBps) external {
+        PayGatewayModuleStorage.data().ownerFeeInfo = PayoutInfo({ payoutAddress: payoutAddress, feeBps: feeBps });
     }
 
-    function getOwnerFeeInfo() external view returns (address payoutAddress, uint256 feeBpsOrAmount, FeeType feeType) {
+    function getOwnerFeeInfo() external view returns (address payoutAddress, uint256 feeBps) {
         payoutAddress = PayGatewayModuleStorage.data().ownerFeeInfo.payoutAddress;
-        feeBpsOrAmount = PayGatewayModuleStorage.data().ownerFeeInfo.feeBpsOrAmount;
-        feeType = PayGatewayModuleStorage.data().ownerFeeInfo.feeType;
+        feeBps = PayGatewayModuleStorage.data().ownerFeeInfo.feeBps;
     }
 
-    function setFeeInfo(
-        bytes32 clientId,
-        address payable payoutAddress,
-        uint256 feeBpsOrAmount,
-        FeeType feeType
-    ) external {
-        if (feeType == FeeType.Bps && feeBpsOrAmount > MAX_BPS) {
-            revert PayGatewayInvalidFeeBps();
-        }
-
+    function setFeeInfo(bytes32 clientId, address payable payoutAddress, uint256 feeBps) external {
         PayGatewayModuleStorage.data().feePayoutInfo[clientId] = PayoutInfo({
             payoutAddress: payoutAddress,
-            feeBpsOrAmount: feeBpsOrAmount,
-            feeType: feeType
+            feeBps: feeBps
         });
     }
 
-    function getFeeInfo(
-        bytes32 clientId
-    ) external view returns (address payoutAddress, uint256 feeBpsOrAmount, FeeType feeType) {
+    function getFeeInfo(bytes32 clientId) external view returns (address payoutAddress, uint256 feeBps) {
         payoutAddress = PayGatewayModuleStorage.data().feePayoutInfo[clientId].payoutAddress;
-        feeBpsOrAmount = PayGatewayModuleStorage.data().feePayoutInfo[clientId].feeBpsOrAmount;
-        feeType = PayGatewayModuleStorage.data().feePayoutInfo[clientId].feeType;
+        feeBps = PayGatewayModuleStorage.data().feePayoutInfo[clientId].feeBps;
     }
 
     /**
@@ -266,13 +242,9 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         PayoutInfo memory devFeeInfo = PayGatewayModuleStorage.data().feePayoutInfo[clientIdForFeePayout];
         PayoutInfo memory ownerFeeInfo = PayGatewayModuleStorage.data().ownerFeeInfo;
 
-        uint256 ownerFee = ownerFeeInfo.feeType == FeeType.Flat
-            ? ownerFeeInfo.feeBpsOrAmount
-            : (tokenAmount * ownerFeeInfo.feeBpsOrAmount) / MAX_BPS;
+        uint256 ownerFee = (tokenAmount * ownerFeeInfo.feeBps) / 10_000;
 
-        uint256 devFee = devFeeInfo.feeType == FeeType.Flat
-            ? devFeeInfo.feeBpsOrAmount
-            : (tokenAmount * devFeeInfo.feeBpsOrAmount) / MAX_BPS;
+        uint256 devFee = (tokenAmount * devFeeInfo.feeBps) / 10_000;
 
         uint256 totalFeeAmount = ownerFee + devFee;
 
