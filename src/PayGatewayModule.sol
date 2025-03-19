@@ -8,11 +8,6 @@ import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
 import { ModularModule } from "lib/modular-contracts/src/ModularModule.sol";
 import { Ownable } from "lib/solady/src/auth/Ownable.sol";
 
-enum FeeType {
-    Bps,
-    Flat
-}
-
 struct PayoutInfo {
     address payable payoutAddress;
     uint256 feeBps;
@@ -157,7 +152,6 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         uint256 tokenAmount,
         address payable forwardAddress,
         bool directTransfer,
-        bytes32 clientIdForFeePayout,
         bytes calldata callData,
         bytes calldata extraData
     ) external payable nonReentrant {
@@ -171,7 +165,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         PayGatewayModuleStorage.data().processed[transactionId] = true;
 
         // distribute fees
-        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, clientIdForFeePayout);
+        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, clientId);
 
         // determine native value to send
         if (_isTokenNative(tokenAddress)) {
@@ -234,12 +228,8 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    function _distributeFees(
-        address tokenAddress,
-        uint256 tokenAmount,
-        bytes32 clientIdForFeePayout
-    ) private returns (uint256) {
-        PayoutInfo memory devFeeInfo = PayGatewayModuleStorage.data().feePayoutInfo[clientIdForFeePayout];
+    function _distributeFees(address tokenAddress, uint256 tokenAmount, bytes32 clientId) private returns (uint256) {
+        PayoutInfo memory devFeeInfo = PayGatewayModuleStorage.data().feePayoutInfo[clientId];
         PayoutInfo memory ownerFeeInfo = PayGatewayModuleStorage.data().ownerFeeInfo;
 
         uint256 ownerFee = (tokenAmount * ownerFeeInfo.feeBps) / 10_000;
