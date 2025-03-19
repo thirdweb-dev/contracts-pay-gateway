@@ -17,16 +17,8 @@ contract PayGatewayTest is Test {
         address indexed sender,
         bytes32 transactionId,
         address tokenAddress,
-        uint256 tokenAmount
-    );
-
-    event FeePayout(
-        bytes32 indexed clientId,
-        address indexed sender,
-        address payoutAddress,
-        address tokenAddress,
-        uint256 feeAmount,
-        uint256 feeBPS
+        uint256 tokenAmount,
+        bytes extraData
     );
 
     event OperatorChanged(address indexed previousOperator, address indexed newOperator);
@@ -44,18 +36,9 @@ contract PayGatewayTest is Test {
     bytes32 internal ownerClientId;
     bytes32 internal clientId;
 
-    uint256 internal ownerFeeAmount;
-    uint256 internal clientFeeAmount;
-    uint256 internal totalFeeAmount;
-
-    PayGatewayModule.PayoutInfo[] internal payouts;
-
-    bytes32 internal typehashPayRequest;
-    bytes32 internal typehashPayoutInfo;
-    bytes32 internal nameHash;
-    bytes32 internal versionHash;
-    bytes32 internal typehashEip712;
-    bytes32 internal domainSeparator;
+    uint256 internal ownerFeeBps;
+    uint256 internal clientFeeBps;
+    uint256 internal totalFeeBps;
 
     function setUp() public {
         owner = payable(vm.addr(1));
@@ -67,8 +50,9 @@ contract PayGatewayTest is Test {
         ownerClientId = keccak256("owner");
         clientId = keccak256("client");
 
-        ownerFeeAmount = 20;
-        clientFeeAmount = 10;
+        ownerFeeBps = 20;
+        clientFeeBps = 10;
+        totalFeeBps = ownerFeeBps + clientFeeBps;
 
         // deploy and install module
         address module = address(new PayGatewayModule());
@@ -87,29 +71,10 @@ contract PayGatewayTest is Test {
         mockERC20.mint(sender, 10 ether);
         vm.deal(sender, 10 ether);
 
-        // build payout info
-        payouts.push(
-            PayGatewayModule.PayoutInfo({ clientId: ownerClientId, payoutAddress: owner, feeAmount: ownerFeeAmount })
-        );
-        payouts.push(
-            PayGatewayModule.PayoutInfo({ clientId: clientId, payoutAddress: client, feeAmount: clientFeeAmount })
-        );
-
-        for (uint256 i = 0; i < payouts.length; i++) {
-            totalFeeAmount += payouts[i].feeAmount;
-        }
-
-        // EIP712
-        typehashPayoutInfo = keccak256("PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)");
-        typehashPayRequest = keccak256(
-            "PayRequest(bytes32 clientId,bytes32 transactionId,address tokenAddress,uint256 tokenAmount,uint256 expirationTimestamp,PayoutInfo[] payouts,address forwardAddress,bool directTransfer,bytes data)PayoutInfo(bytes32 clientId,address payoutAddress,uint256 feeAmount)"
-        );
-        nameHash = keccak256(bytes("PayGateway"));
-        versionHash = keccak256(bytes("1"));
-        typehashEip712 = keccak256(
-            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-        );
-        domainSeparator = keccak256(abi.encode(typehashEip712, nameHash, versionHash, block.chainid, address(gateway)));
+        vm.startPrank(operator);
+        gateway.setFeeInfo(clientId, client, clientFeeBps);
+        gateway.setOwnerFeeInfo(owner, ownerFeeBps);
+        vm.stopPrank();
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -126,79 +91,22 @@ contract PayGatewayTest is Test {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
     }
 
-    function _hashPayoutInfo(PayGatewayModule.PayoutInfo[] memory _payouts) private view returns (bytes32) {
-        bytes32 payoutHash = typehashPayoutInfo;
-
-        bytes32[] memory payoutsHashes = new bytes32[](_payouts.length);
-        for (uint i = 0; i < payouts.length; i++) {
-            payoutsHashes[i] = keccak256(
-                abi.encode(payoutHash, _payouts[i].clientId, _payouts[i].payoutAddress, _payouts[i].feeAmount)
-            );
-        }
-        return keccak256(abi.encodePacked(payoutsHashes));
-    }
-
-    function _prepareAndSignData(
-        uint256 _operatorPrivateKey,
-        PayGatewayModule.PayRequest memory req
-    ) internal view returns (bytes memory signature) {
-        bytes memory dataToHash;
-        {
-            bytes32 _payoutsHash = _hashPayoutInfo(req.payouts);
-            dataToHash = abi.encode(
-                typehashPayRequest,
-                req.clientId,
-                req.transactionId,
-                req.tokenAddress,
-                req.tokenAmount,
-                req.expirationTimestamp,
-                _payoutsHash,
-                req.forwardAddress,
-                req.directTransfer,
-                keccak256(req.data)
-            );
-        }
-
-        {
-            bytes32 _structHash = keccak256(dataToHash);
-            bytes32 typedDataHash = keccak256(abi.encodePacked("\x19\x01", domainSeparator, _structHash));
-            (uint8 v, bytes32 r, bytes32 s) = vm.sign(_operatorPrivateKey, typedDataHash);
-
-            signature = abi.encodePacked(r, s, v);
-        }
-    }
-
     /*///////////////////////////////////////////////////////////////
                     Test `initiateTokenPurchase`
     //////////////////////////////////////////////////////////////*/
 
     function test_initiateTokenPurchase_erc20() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + totalFeeAmount;
+        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
+        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
         vm.prank(sender);
         mockERC20.approve(address(gateway), sendValueWithFees);
 
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(mockERC20);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
-            req
-        );
 
         // state/balances before sending transaction
         uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
@@ -208,42 +116,36 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase(req, _signature);
+        gateway.initiateTokenPurchase(
+            clientId,
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            payable(address(mockTarget)),
+            false,
+            targetCalldata,
+            ""
+        );
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFeeAmount);
-        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFeeAmount);
+        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFee);
+        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFee);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTokenPurchase_erc20_directTransfer() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + totalFeeAmount;
-        bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
+        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
+        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
+        // bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
 
         // approve amount to gateway contract
         vm.prank(sender);
         mockERC20.approve(address(gateway), sendValueWithFees);
 
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(mockERC20);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(mockERC20));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
-            req
-        );
 
         // state/balances before sending transaction
         uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
@@ -253,18 +155,29 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase(req, _signature);
+        gateway.initiateTokenPurchase(
+            clientId,
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            payable(address(receiver)),
+            true,
+            "",
+            ""
+        );
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFeeAmount);
-        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFeeAmount);
+        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFee);
+        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFee);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTokenPurchase_nativeToken() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + totalFeeAmount;
+        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
+        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(
             sender,
             receiver,
@@ -273,30 +186,7 @@ contract PayGatewayTest is Test {
             ""
         );
 
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        console.logBytes32(clientId);
-        console.logBytes32(_transactionId);
-        console.log(sendValue);
-        console.log(address(mockTarget));
-        console.logBytes(targetCalldata);
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
-            req
-        );
 
         // state/balances before sending transaction
         uint256 ownerBalanceBefore = owner.balance;
@@ -306,44 +196,32 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase{ value: sendValueWithFees }(req, _signature);
+        gateway.initiateTokenPurchase{ value: sendValueWithFees }(
+            clientId,
+            _transactionId,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            payable(address(mockTarget)),
+            false,
+            targetCalldata,
+            ""
+        );
 
         // check balances after transaction
-        assertEq(owner.balance, ownerBalanceBefore + ownerFeeAmount);
-        assertEq(client.balance, clientBalanceBefore + clientFeeAmount);
+        assertEq(owner.balance, ownerBalanceBefore + ownerFee);
+        assertEq(client.balance, clientBalanceBefore + clientFee);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTokenPurchase_nativeToken_directTransfer() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + totalFeeAmount;
+        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
+        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
         bytes memory targetCalldata = "";
 
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(receiver));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        console.logBytes32(clientId);
-        console.logBytes32(_transactionId);
-        console.log(sendValue);
-        console.log(address(mockTarget));
-        console.logBytes(targetCalldata);
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
-            req
-        );
 
         // state/balances before sending transaction
         uint256 ownerBalanceBefore = owner.balance;
@@ -353,110 +231,50 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase{ value: sendValueWithFees }(req, _signature);
+        gateway.initiateTokenPurchase{ value: sendValueWithFees }(
+            clientId,
+            _transactionId,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            payable(address(receiver)),
+            true,
+            targetCalldata,
+            ""
+        );
 
         // check balances after transaction
-        assertEq(owner.balance, ownerBalanceBefore + ownerFeeAmount);
-        assertEq(client.balance, clientBalanceBefore + clientFeeAmount);
+        assertEq(owner.balance, ownerBalanceBefore + ownerFee);
+        assertEq(client.balance, clientBalanceBefore + clientFee);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTokenPurchase_events() public {
         uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + totalFeeAmount;
+        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
+        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
         vm.prank(sender);
         mockERC20.approve(address(gateway), sendValueWithFees);
 
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(mockERC20);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(
-            2, // sign with operator private key, i.e. 2
-            req
-        );
 
         // send transaction
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
-        emit TokenPurchaseInitiated(req.clientId, sender, _transactionId, req.tokenAddress, req.tokenAmount);
-        gateway.initiateTokenPurchase(req, _signature);
-    }
-
-    function test_revert_initiateTokenPurchase_invalidSignature() public {
-        uint256 sendValue = 1 ether;
-        uint256 sendValueWithFees = sendValue + totalFeeAmount;
-        bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
-
-        // approve amount to gateway contract
-        vm.prank(sender);
-        mockERC20.approve(address(gateway), sendValueWithFees);
-
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
-        bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(mockERC20);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(
-            123, // sign with random private key
-            req
+        emit TokenPurchaseInitiated(clientId, sender, _transactionId, address(mockERC20), sendValue, "");
+        gateway.initiateTokenPurchase(
+            clientId,
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            payable(address(mockTarget)),
+            false,
+            targetCalldata,
+            ""
         );
-
-        // send transaction
-        vm.prank(sender);
-        vm.expectRevert(abi.encodeWithSelector(PayGatewayModule.PayGatewayVerificationFailed.selector));
-        gateway.initiateTokenPurchase(req, _signature);
-    }
-
-    function test_revert_initiateTokenPurchase_requestExpired() public {
-        uint256 sendValue = 1 ether;
-        bytes memory targetCalldata = "";
-
-        // create pay request
-        PayGatewayModule.PayRequest memory req;
-        bytes32 _transactionId = keccak256("transaction ID");
-
-        req.clientId = clientId;
-        req.transactionId = _transactionId;
-        req.tokenAddress = address(mockERC20);
-        req.tokenAmount = sendValue;
-        req.forwardAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
-        req.data = targetCalldata;
-        req.payouts = payouts;
-
-        // generate signature
-        bytes memory _signature = _prepareAndSignData(2, req);
-
-        vm.warp(req.expirationTimestamp + 1);
-        // send transaction
-        vm.prank(sender);
-        vm.expectRevert(
-            abi.encodeWithSelector(PayGatewayModule.PayGatewayRequestExpired.selector, req.expirationTimestamp)
-        );
-        gateway.initiateTokenPurchase(req, _signature);
     }
 }

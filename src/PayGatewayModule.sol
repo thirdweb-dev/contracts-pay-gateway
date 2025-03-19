@@ -82,7 +82,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         });
         config.fallbackFunctions[2] = FallbackFunction({
             selector: this.initiateTokenPurchase.selector,
-            permissionBits: _ADMIN_ROLE
+            permissionBits: 0
         });
         config.fallbackFunctions[3] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
         config.fallbackFunctions[4] = FallbackFunction({
