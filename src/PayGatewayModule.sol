@@ -21,7 +21,6 @@ library PayGatewayModuleStorage {
     struct Data {
         /// @dev Mapping from pay request UID => whether the pay request is processed.
         mapping(bytes32 => bool) processed;
-        mapping(bytes32 => PayoutInfo) feePayoutInfo;
         PayoutInfo ownerFeeInfo;
     }
 
