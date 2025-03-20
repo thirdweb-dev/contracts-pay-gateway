@@ -46,11 +46,12 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     event TransactionInitiated(
-        bytes32 indexed clientId,
         address indexed sender,
-        bytes32 transactionId,
+        bytes32 indexed transactionId,
         address tokenAddress,
         uint256 tokenAmount,
+        address payoutAddress,
+        uint256 feeBps,
         bytes extraData
     );
 
@@ -70,7 +71,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
 
     /// @notice Returns all implemented callback and fallback functions.
     function getModuleConfig() external pure override returns (ModuleConfig memory config) {
-        config.fallbackFunctions = new FallbackFunction[](8);
+        config.fallbackFunctions = new FallbackFunction[](6);
 
         config.fallbackFunctions[0] = FallbackFunction({
             selector: this.withdrawTo.selector,
@@ -89,12 +90,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             selector: this.setOwnerFeeInfo.selector,
             permissionBits: _ADMIN_ROLE
         });
-        config.fallbackFunctions[5] = FallbackFunction({
-            selector: this.setFeeInfo.selector,
-            permissionBits: _ADMIN_ROLE
-        });
-        config.fallbackFunctions[6] = FallbackFunction({ selector: this.getOwnerFeeInfo.selector, permissionBits: 0 });
-        config.fallbackFunctions[7] = FallbackFunction({ selector: this.getFeeInfo.selector, permissionBits: 0 });
+        config.fallbackFunctions[5] = FallbackFunction({ selector: this.getOwnerFeeInfo.selector, permissionBits: 0 });
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -128,29 +124,18 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         feeBps = PayGatewayModuleStorage.data().ownerFeeInfo.feeBps;
     }
 
-    function setFeeInfo(bytes32 clientId, address payable payoutAddress, uint256 feeBps) external {
-        PayGatewayModuleStorage.data().feePayoutInfo[clientId] = PayoutInfo({
-            payoutAddress: payoutAddress,
-            feeBps: feeBps
-        });
-    }
-
-    function getFeeInfo(bytes32 clientId) external view returns (address payoutAddress, uint256 feeBps) {
-        payoutAddress = PayGatewayModuleStorage.data().feePayoutInfo[clientId].payoutAddress;
-        feeBps = PayGatewayModuleStorage.data().feePayoutInfo[clientId].feeBps;
-    }
-
     /**
       @notice 
       The purpose of initiateTransaction is to be the entrypoint for all thirdweb pay swap / bridge
       transactions. This function will allow us to standardize the logging and fee splitting across all providers. 
      */
     function initiateTransaction(
-        bytes32 clientId,
         bytes32 transactionId,
         address tokenAddress,
         uint256 tokenAmount,
         address payable forwardAddress,
+        address payable payoutAddress,
+        uint256 feeBps,
         bool directTransfer,
         bytes calldata callData,
         bytes calldata extraData
@@ -165,7 +150,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         PayGatewayModuleStorage.data().processed[transactionId] = true;
 
         // distribute fees
-        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, clientId);
+        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, payoutAddress, feeBps);
 
         // determine native value to send
         if (_isTokenNative(tokenAddress)) {
@@ -221,20 +206,32 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             }
         }
 
-        emit TransactionInitiated(clientId, msg.sender, transactionId, tokenAddress, tokenAmount, extraData);
+        emit TransactionInitiated(
+            msg.sender,
+            transactionId,
+            tokenAddress,
+            tokenAmount,
+            payoutAddress,
+            feeBps,
+            extraData
+        );
     }
 
     /*///////////////////////////////////////////////////////////////
                             Internal functions
     //////////////////////////////////////////////////////////////*/
 
-    function _distributeFees(address tokenAddress, uint256 tokenAmount, bytes32 clientId) private returns (uint256) {
-        PayoutInfo memory devFeeInfo = PayGatewayModuleStorage.data().feePayoutInfo[clientId];
+    function _distributeFees(
+        address tokenAddress,
+        uint256 tokenAmount,
+        address payoutAddress,
+        uint256 feeBps
+    ) private returns (uint256) {
         PayoutInfo memory ownerFeeInfo = PayGatewayModuleStorage.data().ownerFeeInfo;
 
         uint256 ownerFee = (tokenAmount * ownerFeeInfo.feeBps) / 10_000;
 
-        uint256 devFee = (tokenAmount * devFeeInfo.feeBps) / 10_000;
+        uint256 devFee = (tokenAmount * feeBps) / 10_000;
 
         uint256 totalFeeAmount = ownerFee + devFee;
 
@@ -244,7 +241,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             }
 
             if (devFee != 0) {
-                SafeTransferLib.safeTransferETH(devFeeInfo.payoutAddress, devFee);
+                SafeTransferLib.safeTransferETH(payoutAddress, devFee);
             }
         } else {
             if (ownerFee != 0) {
@@ -252,7 +249,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             }
 
             if (devFee != 0) {
-                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, devFeeInfo.payoutAddress, devFee);
+                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, payoutAddress, devFee);
             }
         }
 

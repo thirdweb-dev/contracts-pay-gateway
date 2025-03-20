@@ -13,11 +13,12 @@ import { MockTarget } from "./utils/MockTarget.sol";
 
 contract PayGatewayTest is Test {
     event TransactionInitiated(
-        bytes32 indexed clientId,
         address indexed sender,
-        bytes32 transactionId,
+        bytes32 indexed transactionId,
         address tokenAddress,
         uint256 tokenAmount,
+        address payoutAddress,
+        uint256 feeBps,
         bytes extraData
     );
 
@@ -33,9 +34,6 @@ contract PayGatewayTest is Test {
     address payable internal receiver;
     address payable internal client;
 
-    bytes32 internal ownerClientId;
-    bytes32 internal clientId;
-
     uint256 internal ownerFeeBps;
     uint256 internal clientFeeBps;
     uint256 internal totalFeeBps;
@@ -46,9 +44,6 @@ contract PayGatewayTest is Test {
         sender = payable(vm.addr(3));
         receiver = payable(vm.addr(4));
         client = payable(vm.addr(5));
-
-        ownerClientId = keccak256("owner");
-        clientId = keccak256("client");
 
         ownerFeeBps = 20;
         clientFeeBps = 10;
@@ -72,7 +67,6 @@ contract PayGatewayTest is Test {
         vm.deal(sender, 10 ether);
 
         vm.startPrank(operator);
-        gateway.setFeeInfo(clientId, client, clientFeeBps);
         gateway.setOwnerFeeInfo(owner, ownerFeeBps);
         vm.stopPrank();
     }
@@ -117,11 +111,12 @@ contract PayGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         gateway.initiateTransaction(
-            clientId,
             _transactionId,
             address(mockERC20),
             sendValue,
             payable(address(mockTarget)),
+            client,
+            clientFeeBps,
             false,
             targetCalldata,
             ""
@@ -156,11 +151,12 @@ contract PayGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         gateway.initiateTransaction(
-            clientId,
             _transactionId,
             address(mockERC20),
             sendValue,
             payable(address(receiver)),
+            client,
+            clientFeeBps,
             true,
             "",
             ""
@@ -197,11 +193,12 @@ contract PayGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         gateway.initiateTransaction{ value: sendValueWithFees }(
-            clientId,
             _transactionId,
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
             payable(address(mockTarget)),
+            client,
+            clientFeeBps,
             false,
             targetCalldata,
             ""
@@ -232,11 +229,12 @@ contract PayGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         gateway.initiateTransaction{ value: sendValueWithFees }(
-            clientId,
             _transactionId,
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
             payable(address(receiver)),
+            client,
+            clientFeeBps,
             true,
             targetCalldata,
             ""
@@ -265,13 +263,14 @@ contract PayGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
-        emit TransactionInitiated(clientId, sender, _transactionId, address(mockERC20), sendValue, "");
+        emit TransactionInitiated(sender, _transactionId, address(mockERC20), sendValue, client, clientFeeBps, "");
         gateway.initiateTransaction(
-            clientId,
             _transactionId,
             address(mockERC20),
             sendValue,
             payable(address(mockTarget)),
+            client,
+            clientFeeBps,
             false,
             targetCalldata,
             ""
