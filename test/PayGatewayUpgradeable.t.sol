@@ -51,9 +51,7 @@ contract PayGatewayUpgradeableTest is Test {
 
         // deploy impl and proxy
         address impl = address(new PayGatewayImplementation());
-        gateway = PayGatewayImplementation(
-            address(new PayGatewayProxy(impl, abi.encodeCall(PayGatewayImplementation.initialize, (operator))))
-        );
+        gateway = PayGatewayImplementation(address(new PayGatewayProxy(impl, operator)));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
