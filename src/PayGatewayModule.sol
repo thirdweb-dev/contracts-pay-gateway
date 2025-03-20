@@ -45,7 +45,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
                                 Events
     //////////////////////////////////////////////////////////////*/
 
-    event TokenPurchaseInitiated(
+    event TransactionInitiated(
         bytes32 indexed clientId,
         address indexed sender,
         bytes32 transactionId,
@@ -81,7 +81,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             permissionBits: _ADMIN_ROLE
         });
         config.fallbackFunctions[2] = FallbackFunction({
-            selector: this.initiateTokenPurchase.selector,
+            selector: this.initiateTransaction.selector,
             permissionBits: 0
         });
         config.fallbackFunctions[3] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
@@ -142,10 +142,10 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
 
     /**
       @notice 
-      The purpose of initiateTokenPurchase is to be the entrypoint for all thirdweb pay swap / bridge
+      The purpose of initiateTransaction is to be the entrypoint for all thirdweb pay swap / bridge
       transactions. This function will allow us to standardize the logging and fee splitting across all providers. 
      */
-    function initiateTokenPurchase(
+    function initiateTransaction(
         bytes32 clientId,
         bytes32 transactionId,
         address tokenAddress,
@@ -221,7 +221,7 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
             }
         }
 
-        emit TokenPurchaseInitiated(clientId, msg.sender, transactionId, tokenAddress, tokenAmount, extraData);
+        emit TransactionInitiated(clientId, msg.sender, transactionId, tokenAddress, tokenAmount, extraData);
     }
 
     /*///////////////////////////////////////////////////////////////

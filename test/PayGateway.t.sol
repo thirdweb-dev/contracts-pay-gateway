@@ -12,7 +12,7 @@ import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
 
 contract PayGatewayTest is Test {
-    event TokenPurchaseInitiated(
+    event TransactionInitiated(
         bytes32 indexed clientId,
         address indexed sender,
         bytes32 transactionId,
@@ -92,10 +92,10 @@ contract PayGatewayTest is Test {
     }
 
     /*///////////////////////////////////////////////////////////////
-                    Test `initiateTokenPurchase`
+                    Test `initiateTransaction`
     //////////////////////////////////////////////////////////////*/
 
-    function test_initiateTokenPurchase_erc20() public {
+    function test_initiateTransaction_erc20() public {
         uint256 sendValue = 1 ether;
         uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
         uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
@@ -116,7 +116,7 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase(
+        gateway.initiateTransaction(
             clientId,
             _transactionId,
             address(mockERC20),
@@ -134,7 +134,7 @@ contract PayGatewayTest is Test {
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
-    function test_initiateTokenPurchase_erc20_directTransfer() public {
+    function test_initiateTransaction_erc20_directTransfer() public {
         uint256 sendValue = 1 ether;
         uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
         uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
@@ -155,7 +155,7 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase(
+        gateway.initiateTransaction(
             clientId,
             _transactionId,
             address(mockERC20),
@@ -173,7 +173,7 @@ contract PayGatewayTest is Test {
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
-    function test_initiateTokenPurchase_nativeToken() public {
+    function test_initiateTransaction_nativeToken() public {
         uint256 sendValue = 1 ether;
         uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
         uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
@@ -196,7 +196,7 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase{ value: sendValueWithFees }(
+        gateway.initiateTransaction{ value: sendValueWithFees }(
             clientId,
             _transactionId,
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
@@ -214,7 +214,7 @@ contract PayGatewayTest is Test {
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
-    function test_initiateTokenPurchase_nativeToken_directTransfer() public {
+    function test_initiateTransaction_nativeToken_directTransfer() public {
         uint256 sendValue = 1 ether;
         uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
         uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
@@ -231,7 +231,7 @@ contract PayGatewayTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTokenPurchase{ value: sendValueWithFees }(
+        gateway.initiateTransaction{ value: sendValueWithFees }(
             clientId,
             _transactionId,
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
@@ -249,7 +249,7 @@ contract PayGatewayTest is Test {
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
-    function test_initiateTokenPurchase_events() public {
+    function test_initiateTransaction_events() public {
         uint256 sendValue = 1 ether;
         uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
         uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
@@ -265,8 +265,8 @@ contract PayGatewayTest is Test {
         // send transaction
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
-        emit TokenPurchaseInitiated(clientId, sender, _transactionId, address(mockERC20), sendValue, "");
-        gateway.initiateTokenPurchase(
+        emit TransactionInitiated(clientId, sender, _transactionId, address(mockERC20), sendValue, "");
+        gateway.initiateTransaction(
             clientId,
             _transactionId,
             address(mockERC20),
