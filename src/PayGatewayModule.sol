@@ -21,7 +21,7 @@ library PayGatewayModuleStorage {
     struct Data {
         /// @dev Mapping from pay request UID => whether the pay request is processed.
         mapping(bytes32 => bool) processed;
-        PayoutInfo ownerFeeInfo;
+        PayoutInfo protocolFeeInfo;
     }
 
     function data() internal pure returns (Data storage data_) {
@@ -86,10 +86,13 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         });
         config.fallbackFunctions[3] = FallbackFunction({ selector: this.isProcessed.selector, permissionBits: 0 });
         config.fallbackFunctions[4] = FallbackFunction({
-            selector: this.setOwnerFeeInfo.selector,
+            selector: this.setProtocolFeeInfo.selector,
             permissionBits: _ADMIN_ROLE
         });
-        config.fallbackFunctions[5] = FallbackFunction({ selector: this.getOwnerFeeInfo.selector, permissionBits: 0 });
+        config.fallbackFunctions[5] = FallbackFunction({
+            selector: this.getProtocolFeeInfo.selector,
+            permissionBits: 0
+        });
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -114,13 +117,13 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
-    function setOwnerFeeInfo(address payable payoutAddress, uint256 feeBps) external {
-        PayGatewayModuleStorage.data().ownerFeeInfo = PayoutInfo({ payoutAddress: payoutAddress, feeBps: feeBps });
+    function setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) external {
+        PayGatewayModuleStorage.data().protocolFeeInfo = PayoutInfo({ payoutAddress: payoutAddress, feeBps: feeBps });
     }
 
-    function getOwnerFeeInfo() external view returns (address payoutAddress, uint256 feeBps) {
-        payoutAddress = PayGatewayModuleStorage.data().ownerFeeInfo.payoutAddress;
-        feeBps = PayGatewayModuleStorage.data().ownerFeeInfo.feeBps;
+    function getProtocolFeeInfo() external view returns (address payoutAddress, uint256 feeBps) {
+        payoutAddress = PayGatewayModuleStorage.data().protocolFeeInfo.payoutAddress;
+        feeBps = PayGatewayModuleStorage.data().protocolFeeInfo.feeBps;
     }
 
     /**
@@ -226,25 +229,25 @@ contract PayGatewayModule is ModularModule, ReentrancyGuard {
         address payoutAddress,
         uint256 feeBps
     ) private returns (uint256) {
-        PayoutInfo memory ownerFeeInfo = PayGatewayModuleStorage.data().ownerFeeInfo;
+        PayoutInfo memory protocolFeeInfo = PayGatewayModuleStorage.data().protocolFeeInfo;
 
-        uint256 ownerFee = (tokenAmount * ownerFeeInfo.feeBps) / 10_000;
+        uint256 protocolFee = (tokenAmount * protocolFeeInfo.feeBps) / 10_000;
 
         uint256 devFee = (tokenAmount * feeBps) / 10_000;
 
-        uint256 totalFeeAmount = ownerFee + devFee;
+        uint256 totalFeeAmount = protocolFee + devFee;
 
         if (_isTokenNative(tokenAddress)) {
-            if (ownerFee != 0) {
-                SafeTransferLib.safeTransferETH(ownerFeeInfo.payoutAddress, ownerFee);
+            if (protocolFee != 0) {
+                SafeTransferLib.safeTransferETH(protocolFeeInfo.payoutAddress, protocolFee);
             }
 
             if (devFee != 0) {
                 SafeTransferLib.safeTransferETH(payoutAddress, devFee);
             }
         } else {
-            if (ownerFee != 0) {
-                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, ownerFeeInfo.payoutAddress, ownerFee);
+            if (protocolFee != 0) {
+                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, protocolFeeInfo.payoutAddress, protocolFee);
             }
 
             if (devFee != 0) {

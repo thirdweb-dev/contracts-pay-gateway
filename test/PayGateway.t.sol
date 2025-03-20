@@ -67,7 +67,7 @@ contract PayGatewayTest is Test {
         vm.deal(sender, 10 ether);
 
         vm.startPrank(operator);
-        gateway.setOwnerFeeInfo(owner, ownerFeeBps);
+        gateway.setProtocolFeeInfo(owner, ownerFeeBps);
         vm.stopPrank();
     }
 
