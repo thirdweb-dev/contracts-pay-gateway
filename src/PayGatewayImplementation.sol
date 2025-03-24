@@ -68,8 +68,9 @@ contract PayGatewayImplementation is Initializable, UUPSUpgradeable, Ownable, Re
         _disableInitializers();
     }
 
-    function initialize(address _defaultAdmin) external initializer {
+    function initialize(address _defaultAdmin, address payable _payoutAddress, uint256 _feeBps) external initializer {
         _initializeOwner(_defaultAdmin);
+        _setProtocolFeeInfo(_payoutAddress, _feeBps);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -99,6 +100,10 @@ contract PayGatewayImplementation is Initializable, UUPSUpgradeable, Ownable, Re
     }
 
     function setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) external onlyOwner {
+        _setProtocolFeeInfo(payoutAddress, feeBps);
+    }
+
+    function _setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) internal {
         PayGatewayImplementationStorage.data().protocolFeeInfo = PayoutInfo({
             payoutAddress: payoutAddress,
             feeBps: feeBps
