@@ -50,8 +50,8 @@ contract UniversalGatewayUpgradeableTest is Test {
         totalFeeBps = ownerFeeBps + clientFeeBps;
 
         // deploy impl and proxy
-        address impl = address(new UniversalGateway());
-        gateway = UniversalGateway(address(new UniversalGatewayProxy(impl, operator)));
+        address impl = address(new PayGatewayImplementation());
+        gateway = PayGatewayImplementation(address(new PayGatewayProxy(impl, operator, owner, ownerFeeBps)));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -59,10 +59,6 @@ contract UniversalGatewayUpgradeableTest is Test {
         // fund the sender
         mockERC20.mint(sender, 10 ether);
         vm.deal(sender, 10 ether);
-
-        vm.startPrank(operator);
-        gateway.setProtocolFeeInfo(owner, ownerFeeBps);
-        vm.stopPrank();
     }
 
     /*///////////////////////////////////////////////////////////////

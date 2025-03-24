@@ -68,9 +68,9 @@ contract UniversalGateway is Initializable, UUPSUpgradeable, Ownable, Reentrancy
         _disableInitializers();
     }
 
-    function initialize(address _defaultAdmin, uint256 _defaultFeeBps) external initializer {
+    function initialize(address _defaultAdmin, address payable _payoutAddress, uint256 _feeBps) external initializer {
         _initializeOwner(_defaultAdmin);
-        setProtocolFeeInfo(payable(msg.sender), _defaultFeeBps);
+        _setProtocolFeeInfo(_payoutAddress, _feeBps);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -99,7 +99,11 @@ contract UniversalGateway is Initializable, UUPSUpgradeable, Ownable, Reentrancy
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
-    function setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) public onlyOwner {
+    function setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) external onlyOwner {
+        _setProtocolFeeInfo(payoutAddress, feeBps);
+    }
+
+    function _setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) internal {
         PayGatewayImplementationStorage.data().protocolFeeInfo = PayoutInfo({
             payoutAddress: payoutAddress,
             feeBps: feeBps
