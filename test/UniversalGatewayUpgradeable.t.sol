@@ -3,15 +3,15 @@ pragma solidity ^0.8.0;
 
 import { Test, console } from "forge-std/Test.sol";
 
-import { PayGatewayImplementation } from "src/PayGatewayImplementation.sol";
-import { PayGatewayProxy } from "src/PayGatewayProxy.sol";
+import { UniversalGateway } from "src/UniversalGatewayImplementation.sol";
+import { UniversalGatewayProxy } from "src/UniversalGatewayProxy.sol";
 import { IModuleConfig } from "lib/modular-contracts/src/interface/IModuleConfig.sol";
 import { IModularCore } from "lib/modular-contracts/src/interface/IModularCore.sol";
 import { LibClone } from "lib/solady/src/utils/LibClone.sol";
 import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
 
-contract PayGatewayUpgradeableTest is Test {
+contract UniversalGatewayUpgradeableTest is Test {
     event TransactionInitiated(
         address indexed sender,
         bytes32 indexed transactionId,
@@ -24,7 +24,7 @@ contract PayGatewayUpgradeableTest is Test {
 
     event OperatorChanged(address indexed previousOperator, address indexed newOperator);
 
-    PayGatewayImplementation internal gateway;
+    UniversalGateway internal gateway;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
@@ -50,8 +50,8 @@ contract PayGatewayUpgradeableTest is Test {
         totalFeeBps = ownerFeeBps + clientFeeBps;
 
         // deploy impl and proxy
-        address impl = address(new PayGatewayImplementation());
-        gateway = PayGatewayImplementation(address(new PayGatewayProxy(impl, operator)));
+        address impl = address(new UniversalGateway());
+        gateway = UniversalGateway(address(new UniversalGatewayProxy(impl, operator)));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();

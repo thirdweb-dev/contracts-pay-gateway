@@ -33,7 +33,7 @@ library PayGatewayImplementationStorage {
     }
 }
 
-contract PayGatewayImplementation is Initializable, UUPSUpgradeable, Ownable, ReentrancyGuard {
+contract UniversalGateway is Initializable, UUPSUpgradeable, Ownable, ReentrancyGuard {
     /*///////////////////////////////////////////////////////////////
                         State, constants, structs
     //////////////////////////////////////////////////////////////*/
@@ -68,8 +68,9 @@ contract PayGatewayImplementation is Initializable, UUPSUpgradeable, Ownable, Re
         _disableInitializers();
     }
 
-    function initialize(address _defaultAdmin) external initializer {
+    function initialize(address _defaultAdmin, uint256 _defaultFeeBps) external initializer {
         _initializeOwner(_defaultAdmin);
+        setProtocolFeeInfo(payable(msg.sender), _defaultFeeBps);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -98,7 +99,7 @@ contract PayGatewayImplementation is Initializable, UUPSUpgradeable, Ownable, Re
         withdrawTo(tokenAddress, tokenAmount, payable(msg.sender));
     }
 
-    function setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) external onlyOwner {
+    function setProtocolFeeInfo(address payable payoutAddress, uint256 feeBps) public onlyOwner {
         PayGatewayImplementationStorage.data().protocolFeeInfo = PayoutInfo({
             payoutAddress: payoutAddress,
             feeBps: feeBps
