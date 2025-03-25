@@ -293,4 +293,42 @@ contract UniversalBridgeTest is Test {
             ""
         );
     }
+
+    function test_revert_restrictedForwardAddress() public {
+        vm.prank(owner);
+        bridge.restrictAddress(address(receiver), true);
+
+        vm.prank(sender);
+        vm.expectRevert(UniversalBridgeV1.UniversalBridgeRestrictedAddress.selector);
+        bridge.initiateTransaction(
+            bytes32(0),
+            address(mockERC20),
+            1,
+            payable(address(receiver)),
+            developer,
+            developerFeeBps,
+            true,
+            "",
+            ""
+        );
+    }
+
+    function test_revert_restrictedTokenAddress() public {
+        vm.prank(owner);
+        bridge.restrictAddress(address(mockERC20), true);
+
+        vm.prank(sender);
+        vm.expectRevert(UniversalBridgeV1.UniversalBridgeRestrictedAddress.selector);
+        bridge.initiateTransaction(
+            bytes32(0),
+            address(mockERC20),
+            1,
+            payable(address(receiver)),
+            developer,
+            developerFeeBps,
+            true,
+            "",
+            ""
+        );
+    }
 }
