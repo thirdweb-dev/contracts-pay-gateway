@@ -3,15 +3,15 @@ pragma solidity ^0.8.0;
 
 import { Test, console } from "forge-std/Test.sol";
 
-import { UniversalGatewayV1 } from "src/UniversalGatewayV1.sol";
-import { UniversalGatewayProxy } from "src/UniversalGatewayProxy.sol";
+import { UniversalBridgeV1 } from "src/UniversalBridgeV1.sol";
+import { UniversalBridgeProxy } from "src/UniversalBridgeProxy.sol";
 import { IModuleConfig } from "lib/modular-contracts/src/interface/IModuleConfig.sol";
 import { IModularCore } from "lib/modular-contracts/src/interface/IModularCore.sol";
 import { LibClone } from "lib/solady/src/utils/LibClone.sol";
 import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
 
-contract UniversalGatewayUpgradeableTest is Test {
+contract UniversalBridgeTest is Test {
     event TransactionInitiated(
         address indexed sender,
         bytes32 indexed transactionId,
@@ -22,7 +22,7 @@ contract UniversalGatewayUpgradeableTest is Test {
         bytes extraData
     );
 
-    UniversalGatewayV1 internal gateway;
+    UniversalBridgeV1 internal bridge;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
@@ -48,9 +48,9 @@ contract UniversalGatewayUpgradeableTest is Test {
         totalFeeBps = protocolFeeBps + developerFeeBps;
 
         // deploy impl and proxy
-        address impl = address(new UniversalGatewayV1());
-        gateway = UniversalGatewayV1(
-            address(new UniversalGatewayProxy(impl, owner, protocolFeeRecipient, protocolFeeBps))
+        address impl = address(new UniversalBridgeV1());
+        bridge = UniversalBridgeV1(
+            address(new UniversalBridgeProxy(impl, owner, protocolFeeRecipient, protocolFeeBps))
         );
 
         mockERC20 = new MockERC20("Token", "TKN");
@@ -86,9 +86,9 @@ contract UniversalGatewayUpgradeableTest is Test {
         uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
-        // approve amount to gateway contract
+        // approve amount to bridge contract
         vm.prank(sender);
-        mockERC20.approve(address(gateway), sendValueWithFees);
+        mockERC20.approve(address(bridge), sendValueWithFees);
 
         bytes32 _transactionId = keccak256("transaction ID");
 
@@ -100,7 +100,7 @@ contract UniversalGatewayUpgradeableTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTransaction(
+        bridge.initiateTransaction(
             _transactionId,
             address(mockERC20),
             sendValue,
@@ -126,9 +126,9 @@ contract UniversalGatewayUpgradeableTest is Test {
         uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         // bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
 
-        // approve amount to gateway contract
+        // approve amount to bridge contract
         vm.prank(sender);
-        mockERC20.approve(address(gateway), sendValueWithFees);
+        mockERC20.approve(address(bridge), sendValueWithFees);
 
         bytes32 _transactionId = keccak256("transaction ID");
 
@@ -140,7 +140,7 @@ contract UniversalGatewayUpgradeableTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTransaction(
+        bridge.initiateTransaction(
             _transactionId,
             address(mockERC20),
             sendValue,
@@ -182,7 +182,7 @@ contract UniversalGatewayUpgradeableTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTransaction{ value: sendValueWithFees }(
+        bridge.initiateTransaction{ value: sendValueWithFees }(
             _transactionId,
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
@@ -218,7 +218,7 @@ contract UniversalGatewayUpgradeableTest is Test {
 
         // send transaction
         vm.prank(sender);
-        gateway.initiateTransaction{ value: sendValueWithFees }(
+        bridge.initiateTransaction{ value: sendValueWithFees }(
             _transactionId,
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
@@ -244,9 +244,9 @@ contract UniversalGatewayUpgradeableTest is Test {
         uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
-        // approve amount to gateway contract
+        // approve amount to bridge contract
         vm.prank(sender);
-        mockERC20.approve(address(gateway), sendValueWithFees);
+        mockERC20.approve(address(bridge), sendValueWithFees);
 
         bytes32 _transactionId = keccak256("transaction ID");
 
@@ -262,7 +262,7 @@ contract UniversalGatewayUpgradeableTest is Test {
             developerFeeBps,
             ""
         );
-        gateway.initiateTransaction(
+        bridge.initiateTransaction(
             _transactionId,
             address(mockERC20),
             sendValue,
