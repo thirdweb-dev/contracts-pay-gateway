@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import { Test, console } from "forge-std/Test.sol";
 
-import { UniversalGateway } from "src/UniversalGatewayImplementation.sol";
+import { UniversalGatewayV1 } from "src/UniversalGatewayV1.sol";
 import { UniversalGatewayProxy } from "src/UniversalGatewayProxy.sol";
 import { IModuleConfig } from "lib/modular-contracts/src/interface/IModuleConfig.sol";
 import { IModularCore } from "lib/modular-contracts/src/interface/IModularCore.sol";
@@ -17,41 +17,41 @@ contract UniversalGatewayUpgradeableTest is Test {
         bytes32 indexed transactionId,
         address tokenAddress,
         uint256 tokenAmount,
-        address payoutAddress,
-        uint256 feeBps,
+        address developerFeeRecipient,
+        uint256 developerFeeBps,
         bytes extraData
     );
 
-    event OperatorChanged(address indexed previousOperator, address indexed newOperator);
-
-    UniversalGateway internal gateway;
+    UniversalGatewayV1 internal gateway;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
 
     address payable internal owner;
-    address payable internal operator;
+    address payable internal protocolFeeRecipient;
     address payable internal sender;
     address payable internal receiver;
-    address payable internal client;
+    address payable internal developer;
 
-    uint256 internal ownerFeeBps;
-    uint256 internal clientFeeBps;
+    uint256 internal protocolFeeBps;
+    uint256 internal developerFeeBps;
     uint256 internal totalFeeBps;
 
     function setUp() public {
         owner = payable(vm.addr(1));
-        operator = payable(vm.addr(2));
+        protocolFeeRecipient = payable(vm.addr(2));
         sender = payable(vm.addr(3));
         receiver = payable(vm.addr(4));
-        client = payable(vm.addr(5));
+        developer = payable(vm.addr(5));
 
-        ownerFeeBps = 20;
-        clientFeeBps = 10;
-        totalFeeBps = ownerFeeBps + clientFeeBps;
+        protocolFeeBps = 20;
+        developerFeeBps = 10;
+        totalFeeBps = protocolFeeBps + developerFeeBps;
 
         // deploy impl and proxy
-        address impl = address(new PayGatewayImplementation());
-        gateway = PayGatewayImplementation(address(new PayGatewayProxy(impl, operator, owner, ownerFeeBps)));
+        address impl = address(new UniversalGatewayV1());
+        gateway = UniversalGatewayV1(
+            address(new UniversalGatewayProxy(impl, owner, protocolFeeRecipient, protocolFeeBps))
+        );
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -81,9 +81,9 @@ contract UniversalGatewayUpgradeableTest is Test {
 
     function test_initiateTransaction_erc20() public {
         uint256 sendValue = 1 ether;
-        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
-        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
@@ -93,8 +93,8 @@ contract UniversalGatewayUpgradeableTest is Test {
         bytes32 _transactionId = keccak256("transaction ID");
 
         // state/balances before sending transaction
-        uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
-        uint256 clientBalanceBefore = mockERC20.balanceOf(client);
+        uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
+        uint256 developerBalanceBefore = mockERC20.balanceOf(developer);
         uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
         uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
 
@@ -105,25 +105,25 @@ contract UniversalGatewayUpgradeableTest is Test {
             address(mockERC20),
             sendValue,
             payable(address(mockTarget)),
-            client,
-            clientFeeBps,
+            developer,
+            developerFeeBps,
             false,
             targetCalldata,
             ""
         );
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFee);
-        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFee);
+        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + protocolFee);
+        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + developerFee);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_erc20_directTransfer() public {
         uint256 sendValue = 1 ether;
-        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
-        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         // bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
 
         // approve amount to gateway contract
@@ -133,8 +133,8 @@ contract UniversalGatewayUpgradeableTest is Test {
         bytes32 _transactionId = keccak256("transaction ID");
 
         // state/balances before sending transaction
-        uint256 ownerBalanceBefore = mockERC20.balanceOf(owner);
-        uint256 clientBalanceBefore = mockERC20.balanceOf(client);
+        uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
+        uint256 developerBalanceBefore = mockERC20.balanceOf(developer);
         uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
         uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
 
@@ -145,25 +145,25 @@ contract UniversalGatewayUpgradeableTest is Test {
             address(mockERC20),
             sendValue,
             payable(address(receiver)),
-            client,
-            clientFeeBps,
+            developer,
+            developerFeeBps,
             true,
             "",
             ""
         );
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(owner), ownerBalanceBefore + ownerFee);
-        assertEq(mockERC20.balanceOf(client), clientBalanceBefore + clientFee);
+        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + protocolFee);
+        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + developerFee);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_nativeToken() public {
         uint256 sendValue = 1 ether;
-        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
-        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(
             sender,
             receiver,
@@ -175,8 +175,8 @@ contract UniversalGatewayUpgradeableTest is Test {
         bytes32 _transactionId = keccak256("transaction ID");
 
         // state/balances before sending transaction
-        uint256 ownerBalanceBefore = owner.balance;
-        uint256 clientBalanceBefore = client.balance;
+        uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
+        uint256 developerBalanceBefore = developer.balance;
         uint256 senderBalanceBefore = sender.balance;
         uint256 receiverBalanceBefore = receiver.balance;
 
@@ -187,32 +187,32 @@ contract UniversalGatewayUpgradeableTest is Test {
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
             payable(address(mockTarget)),
-            client,
-            clientFeeBps,
+            developer,
+            developerFeeBps,
             false,
             targetCalldata,
             ""
         );
 
         // check balances after transaction
-        assertEq(owner.balance, ownerBalanceBefore + ownerFee);
-        assertEq(client.balance, clientBalanceBefore + clientFee);
+        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + protocolFee);
+        assertEq(developer.balance, developerBalanceBefore + developerFee);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_nativeToken_directTransfer() public {
         uint256 sendValue = 1 ether;
-        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
-        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = "";
 
         bytes32 _transactionId = keccak256("transaction ID");
 
         // state/balances before sending transaction
-        uint256 ownerBalanceBefore = owner.balance;
-        uint256 clientBalanceBefore = client.balance;
+        uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
+        uint256 developerBalanceBefore = developer.balance;
         uint256 senderBalanceBefore = sender.balance;
         uint256 receiverBalanceBefore = receiver.balance;
 
@@ -223,25 +223,25 @@ contract UniversalGatewayUpgradeableTest is Test {
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
             payable(address(receiver)),
-            client,
-            clientFeeBps,
+            developer,
+            developerFeeBps,
             true,
             targetCalldata,
             ""
         );
 
         // check balances after transaction
-        assertEq(owner.balance, ownerBalanceBefore + ownerFee);
-        assertEq(client.balance, clientBalanceBefore + clientFee);
+        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + protocolFee);
+        assertEq(developer.balance, developerBalanceBefore + developerFee);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_events() public {
         uint256 sendValue = 1 ether;
-        uint256 ownerFee = (sendValue * ownerFeeBps) / 10_000;
-        uint256 clientFee = (sendValue * clientFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + ownerFee + clientFee;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to gateway contract
@@ -253,14 +253,22 @@ contract UniversalGatewayUpgradeableTest is Test {
         // send transaction
         vm.prank(sender);
         vm.expectEmit(true, true, false, true);
-        emit TransactionInitiated(sender, _transactionId, address(mockERC20), sendValue, client, clientFeeBps, "");
+        emit TransactionInitiated(
+            sender,
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            developer,
+            developerFeeBps,
+            ""
+        );
         gateway.initiateTransaction(
             _transactionId,
             address(mockERC20),
             sendValue,
             payable(address(mockTarget)),
-            client,
-            clientFeeBps,
+            developer,
+            developerFeeBps,
             false,
             targetCalldata,
             ""
