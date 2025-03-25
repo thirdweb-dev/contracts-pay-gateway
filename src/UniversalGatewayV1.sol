@@ -92,7 +92,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
         uint256 tokenAmount,
         address payable receiver
     ) public nonReentrant onlyOwner {
-        if (_isTokenNative(tokenAddress)) {
+        if (_isNativeToken(tokenAddress)) {
             SafeTransferLib.safeTransferETH(receiver, tokenAmount);
         } else {
             SafeTransferLib.safeTransfer(tokenAddress, receiver, tokenAmount);
@@ -154,7 +154,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
         uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, developerFeeRecipient, developerFeeBps);
 
         // determine native value to send
-        if (_isTokenNative(tokenAddress)) {
+        if (_isNativeToken(tokenAddress)) {
             sendValue = msg.value - totalFeeAmount;
 
             if (sendValue < tokenAmount) {
@@ -163,7 +163,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
         }
 
         if (directTransfer) {
-            if (_isTokenNative(tokenAddress)) {
+            if (_isNativeToken(tokenAddress)) {
                 (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }("");
 
                 if (!success) {
@@ -185,7 +185,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
                 SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, forwardAddress, tokenAmount);
             }
         } else {
-            if (!_isTokenNative(tokenAddress)) {
+            if (!_isNativeToken(tokenAddress)) {
                 // pull user funds
                 SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
                 SafeTransferLib.safeApprove(tokenAddress, forwardAddress, tokenAmount);
@@ -235,7 +235,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
         uint256 developerFee = (tokenAmount * developerFeeBps) / 10_000;
         uint256 totalFeeAmount = protocolFee + developerFee;
 
-        if (_isTokenNative(tokenAddress)) {
+        if (_isNativeToken(tokenAddress)) {
             if (protocolFee != 0) {
                 SafeTransferLib.safeTransferETH(protocolFeeRecipient, protocolFee);
             }
@@ -256,7 +256,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
         return totalFeeAmount;
     }
 
-    function _isTokenNative(address tokenAddress) private pure returns (bool) {
+    function _isNativeToken(address tokenAddress) private pure returns (bool) {
         return tokenAddress == NATIVE_TOKEN_ADDRESS;
     }
 
