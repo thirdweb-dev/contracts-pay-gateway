@@ -274,4 +274,23 @@ contract UniversalBridgeTest is Test {
             ""
         );
     }
+
+    function test_revert_transferPaused() public {
+        vm.prank(owner);
+        bridge.pauseTransfer(true);
+
+        vm.prank(sender);
+        vm.expectRevert(UniversalBridgeV1.UniversalBridgeTransferPaused.selector);
+        bridge.initiateTransaction(
+            bytes32(0),
+            address(mockERC20),
+            1,
+            payable(address(receiver)),
+            developer,
+            developerFeeBps,
+            true,
+            "",
+            ""
+        );
+    }
 }

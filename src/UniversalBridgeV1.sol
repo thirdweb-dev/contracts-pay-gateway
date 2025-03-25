@@ -21,6 +21,8 @@ library UniversalBridgeStorage {
         uint256 protocolFeeBps;
         /// @dev protocol fee recipient address
         address protocolFeeRecipient;
+        /// @dev whether the transfers are paused
+        bool isTransferPaused;
     }
 
     function data() internal pure returns (Data storage data_) {
@@ -63,6 +65,7 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
     error UniversalBridgeMsgValueNotZero();
     error UniversalBridgeInvalidFeeBps();
     error UniversalBridgeZeroAddress();
+    error UniversalBridgeTransferPaused();
 
     constructor() {
         _disableInitializers();
@@ -75,6 +78,14 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
     ) external initializer {
         _initializeOwner(_owner);
         _setProtocolFeeInfo(_protocolFeeRecipient, _protocolFeeBps);
+    }
+
+    modifier whenNotPaused() {
+        if (_universalBridgeStorage().isTransferPaused) {
+            revert UniversalBridgeTransferPaused();
+        }
+
+        _;
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -103,22 +114,17 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         _setProtocolFeeInfo(feeRecipient, feeBps);
     }
 
-    function _setProtocolFeeInfo(address payable feeRecipient, uint256 feeBps) internal {
-        if (feeRecipient == address(0)) {
-            revert UniversalBridgeZeroAddress();
-        }
-
-        if (feeBps > MAX_PROTOCOL_FEE_BPS) {
-            revert UniversalBridgeInvalidFeeBps();
-        }
-
-        _universalBridgeStorage().protocolFeeRecipient = feeRecipient;
-        _universalBridgeStorage().protocolFeeBps = feeBps;
+    function pauseTransfer(bool _pause) external onlyOwner {
+        _universalBridgeStorage().isTransferPaused = _pause;
     }
 
     function getProtocolFeeInfo() external view returns (address feeRecipient, uint256 feeBps) {
         feeRecipient = _universalBridgeStorage().protocolFeeRecipient;
         feeBps = _universalBridgeStorage().protocolFeeBps;
+    }
+
+    function isTransferPaused() external view returns (bool) {
+        return _universalBridgeStorage().isTransferPaused;
     }
 
     /**
@@ -136,7 +142,7 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         bool directTransfer,
         bytes calldata callData,
         bytes calldata extraData
-    ) external payable nonReentrant onlyProxy {
+    ) external payable nonReentrant onlyProxy whenNotPaused {
         // verify amount
         if (tokenAmount == 0) {
             revert UniversalBridgeInvalidAmount(tokenAmount);
@@ -240,6 +246,19 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         }
 
         return totalFeeAmount;
+    }
+
+    function _setProtocolFeeInfo(address payable feeRecipient, uint256 feeBps) internal {
+        if (feeRecipient == address(0)) {
+            revert UniversalBridgeZeroAddress();
+        }
+
+        if (feeBps > MAX_PROTOCOL_FEE_BPS) {
+            revert UniversalBridgeInvalidFeeBps();
+        }
+
+        _universalBridgeStorage().protocolFeeRecipient = feeRecipient;
+        _universalBridgeStorage().protocolFeeBps = feeBps;
     }
 
     function _isNativeToken(address tokenAddress) private pure returns (bool) {
