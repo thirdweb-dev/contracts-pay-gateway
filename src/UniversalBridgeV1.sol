@@ -23,8 +23,8 @@ library UniversalBridgeStorage {
         uint256 protocolFeeBps;
         /// @dev protocol fee recipient address
         address protocolFeeRecipient;
-        /// @dev whether the transfers are paused
-        bool isTransferPaused;
+        /// @dev whether the bridge is paused
+        bool isPaused;
     }
 
     function data() internal pure returns (Data storage data_) {
@@ -67,7 +67,7 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
     error UniversalBridgeMsgValueNotZero();
     error UniversalBridgeInvalidFeeBps();
     error UniversalBridgeZeroAddress();
-    error UniversalBridgeTransferPaused();
+    error UniversalBridgePaused();
     error UniversalBridgeRestrictedAddress();
 
     constructor() {
@@ -109,8 +109,8 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         _setProtocolFeeInfo(feeRecipient, feeBps);
     }
 
-    function pauseTransfer(bool _pause) external onlyOwner {
-        _universalBridgeStorage().isTransferPaused = _pause;
+    function pause(bool _pause) external onlyOwner {
+        _universalBridgeStorage().isPaused = _pause;
     }
 
     function restrictAddress(address _target, bool _restrict) external onlyOwner {
@@ -122,8 +122,8 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         feeBps = _universalBridgeStorage().protocolFeeBps;
     }
 
-    function isTransferPaused() external view returns (bool) {
-        return _universalBridgeStorage().isTransferPaused;
+    function isPaused() external view returns (bool) {
+        return _universalBridgeStorage().isPaused;
     }
 
     function isRestricted(address _target) external view returns (bool) {
@@ -146,19 +146,15 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         bytes calldata callData,
         bytes calldata extraData
     ) external payable nonReentrant onlyProxy {
-        _universalBridgeStorage().processed[transactionId] = true;
+        if (_universalBridgeStorage().isPaused) {
+            revert UniversalBridgePaused();
+        }
 
-        {
-            if (_universalBridgeStorage().isTransferPaused) {
-                revert UniversalBridgeTransferPaused();
-            }
-
-            if (
-                _universalBridgeStorage().isRestricted[forwardAddress] ||
-                _universalBridgeStorage().isRestricted[tokenAddress]
-            ) {
-                revert UniversalBridgeRestrictedAddress();
-            }
+        if (
+            _universalBridgeStorage().isRestricted[forwardAddress] ||
+            _universalBridgeStorage().isRestricted[tokenAddress]
+        ) {
+            revert UniversalBridgeRestrictedAddress();
         }
 
         // verify amount
@@ -168,6 +164,7 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
 
         // mark the pay request as processed
+        _universalBridgeStorage().processed[transactionId] = true;
 
         // distribute fees
         uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, developerFeeRecipient, developerFeeBps);

@@ -275,12 +275,12 @@ contract UniversalBridgeTest is Test {
         );
     }
 
-    function test_revert_transferPaused() public {
+    function test_revert_paused() public {
         vm.prank(owner);
-        bridge.pauseTransfer(true);
+        bridge.pause(true);
 
         vm.prank(sender);
-        vm.expectRevert(UniversalBridgeV1.UniversalBridgeTransferPaused.selector);
+        vm.expectRevert(UniversalBridgeV1.UniversalBridgePaused.selector);
         bridge.initiateTransaction(
             bytes32(0),
             address(mockERC20),
