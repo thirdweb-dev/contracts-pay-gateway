@@ -164,19 +164,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
 
         if (directTransfer) {
             if (_isNativeToken(tokenAddress)) {
-                (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }("");
-
-                if (!success) {
-                    // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
-                    if (response.length > 0) {
-                        assembly {
-                            let returndata_size := mload(response)
-                            revert(add(32, response), returndata_size)
-                        }
-                    } else {
-                        revert UniversalGatewayFailedToForward();
-                    }
-                }
+                _call(forwardAddress, sendValue, "");
             } else {
                 if (msg.value != 0) {
                     revert UniversalGatewayMsgValueNotZero();
@@ -191,20 +179,7 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
                 SafeTransferLib.safeApprove(tokenAddress, forwardAddress, tokenAmount);
             }
 
-            {
-                (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }(callData);
-                if (!success) {
-                    // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
-                    if (response.length > 0) {
-                        assembly {
-                            let returndata_size := mload(response)
-                            revert(add(32, response), returndata_size)
-                        }
-                    } else {
-                        revert UniversalGatewayFailedToForward();
-                    }
-                }
-            }
+            _call(forwardAddress, sendValue, callData);
         }
 
         emit TransactionInitiated(
@@ -216,6 +191,21 @@ contract UniversalGatewayV1 is Initializable, UUPSUpgradeable, Ownable, Reentran
             developerFeeBps,
             extraData
         );
+    }
+
+    function _call(address forwardAddress, uint256 sendValue, bytes memory callData) internal {
+        (bool success, bytes memory response) = forwardAddress.call{ value: sendValue }(callData);
+        if (!success) {
+            // If there is return data, the delegate call reverted with a reason or a custom error, which we bubble up.
+            if (response.length > 0) {
+                assembly {
+                    let returndata_size := mload(response)
+                    revert(add(32, response), returndata_size)
+                }
+            } else {
+                revert UniversalGatewayFailedToForward();
+            }
+        }
     }
 
     /*///////////////////////////////////////////////////////////////
