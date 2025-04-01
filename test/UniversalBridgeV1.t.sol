@@ -291,6 +291,40 @@ contract UniversalBridgeTest is Test {
         );
     }
 
+    function test_revert_mismatchedValue() public {
+        uint256 sendValue = 1 ether;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 totalFeeAmount = protocolFee + developerFee;
+        uint256 sendValueWithFees = sendValue + totalFeeAmount - 1; // send less value than required
+        bytes memory targetCalldata = "";
+
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        // state/balances before sending transaction
+        uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
+        uint256 developerBalanceBefore = developer.balance;
+        uint256 senderBalanceBefore = sender.balance;
+        uint256 receiverBalanceBefore = receiver.balance;
+
+        // send transaction
+        vm.prank(sender);
+        vm.expectRevert(
+            abi.encodeWithSelector(UniversalBridgeV1.UniversalBridgeMismatchedValue.selector, sendValue, sendValue - 1)
+        );
+        bridge.initiateTransaction{ value: sendValueWithFees }(
+            _transactionId,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            payable(address(receiver)),
+            developer,
+            developerFeeBps,
+            true,
+            targetCalldata,
+            ""
+        );
+    }
+
     function test_revert_paused() public {
         vm.prank(owner);
         bridge.pause(true);
