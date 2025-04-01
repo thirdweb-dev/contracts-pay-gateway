@@ -301,12 +301,6 @@ contract UniversalBridgeTest is Test {
 
         bytes32 _transactionId = keccak256("transaction ID");
 
-        // state/balances before sending transaction
-        uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
-        uint256 developerBalanceBefore = developer.balance;
-        uint256 senderBalanceBefore = sender.balance;
-        uint256 receiverBalanceBefore = receiver.balance;
-
         // send transaction
         vm.prank(sender);
         vm.expectRevert(
@@ -321,6 +315,35 @@ contract UniversalBridgeTest is Test {
             developerFeeBps,
             true,
             targetCalldata,
+            ""
+        );
+    }
+
+    function test_revert_erc20_directTransfer_nonZeroMsgValue() public {
+        uint256 sendValue = 1 ether;
+        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
+        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
+        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
+        // bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
+
+        // approve amount to bridge contract
+        vm.prank(sender);
+        mockERC20.approve(address(bridge), sendValueWithFees);
+
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        // send transaction
+        vm.prank(sender);
+        vm.expectRevert(UniversalBridgeV1.UniversalBridgeMsgValueNotZero.selector);
+        bridge.initiateTransaction{ value: 1 }( // non-zero msg value
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            payable(address(receiver)),
+            developer,
+            developerFeeBps,
+            true,
+            "",
             ""
         );
     }
