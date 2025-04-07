@@ -10,6 +10,8 @@ import { IModularCore } from "lib/modular-contracts/src/interface/IModularCore.s
 import { LibClone } from "lib/solady/src/utils/LibClone.sol";
 import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
+import { MockTargetNonSpender } from "./utils/MockTargetNonSpender.sol";
+import { MockSpender } from "./utils/MockSpender.sol";
 
 contract UniversalBridgeTest is Test {
     event TransactionInitiated(
@@ -25,6 +27,8 @@ contract UniversalBridgeTest is Test {
     UniversalBridgeV1 internal bridge;
     MockERC20 internal mockERC20;
     MockTarget internal mockTarget;
+    MockTargetNonSpender internal mockTargetNonSpender;
+    MockSpender internal mockSpender;
 
     address payable internal owner;
     address payable internal protocolFeeRecipient;
@@ -35,6 +39,10 @@ contract UniversalBridgeTest is Test {
     uint256 internal protocolFeeBps;
     uint256 internal developerFeeBps;
     uint256 internal totalFeeBps;
+    uint256 internal sendValue;
+    uint256 internal expectedProtocolFee;
+    uint256 internal expectedDeveloperFee;
+    uint256 internal sendValueWithFees;
 
     function setUp() public {
         owner = payable(vm.addr(1));
@@ -43,9 +51,13 @@ contract UniversalBridgeTest is Test {
         receiver = payable(vm.addr(4));
         developer = payable(vm.addr(5));
 
-        protocolFeeBps = 20;
-        developerFeeBps = 10;
-        totalFeeBps = protocolFeeBps + developerFeeBps;
+        protocolFeeBps = 30; // 0.3%
+        developerFeeBps = 10; // 0.1%
+
+        sendValue = 100 ether;
+        expectedProtocolFee = 0.3 ether; // 0.3% of send value
+        expectedDeveloperFee = 0.1 ether; // 0.1% of send value
+        sendValueWithFees = sendValue + expectedProtocolFee + expectedDeveloperFee;
 
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
@@ -55,10 +67,12 @@ contract UniversalBridgeTest is Test {
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
+        mockSpender = new MockSpender();
+        mockTargetNonSpender = new MockTargetNonSpender(address(mockSpender));
 
         // fund the sender
-        mockERC20.mint(sender, 10 ether);
-        vm.deal(sender, 10 ether);
+        mockERC20.mint(sender, 1000 ether);
+        vm.deal(sender, 1000 ether);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -80,10 +94,6 @@ contract UniversalBridgeTest is Test {
     //////////////////////////////////////////////////////////////*/
 
     function test_initiateTransaction_erc20() public {
-        uint256 sendValue = 1 ether;
-        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
-        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to bridge contract
@@ -105,26 +115,22 @@ contract UniversalBridgeTest is Test {
             address(mockERC20),
             sendValue,
             payable(address(mockTarget)),
+            payable(address(mockTarget)),
             developer,
             developerFeeBps,
-            false,
             targetCalldata,
             ""
         );
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + protocolFee);
-        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + developerFee);
+        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + expectedDeveloperFee);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
-    function test_initiateTransaction_erc20_directTransfer() public {
-        uint256 sendValue = 1 ether;
-        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
-        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
-        // bytes memory targetCalldata = abi.encodeWithSignature("transfer(address,uint256)", receiver, sendValue);
+    function test_initiateTransaction_erc20_differentSpender() public {
+        bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to bridge contract
         vm.prank(sender);
@@ -144,26 +150,56 @@ contract UniversalBridgeTest is Test {
             _transactionId,
             address(mockERC20),
             sendValue,
-            payable(address(receiver)),
+            payable(address(mockTargetNonSpender)),
+            payable(address(mockSpender)),
             developer,
             developerFeeBps,
-            true,
+            targetCalldata,
+            ""
+        );
+
+        // check balances after transaction
+        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + expectedDeveloperFee);
+        assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
+        assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
+    }
+
+    function test_initiateTransaction_erc20_directTransfer() public {
+        // approve amount to bridge contract
+        vm.prank(sender);
+        mockERC20.approve(address(bridge), sendValueWithFees);
+
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        // state/balances before sending transaction
+        uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
+        uint256 developerBalanceBefore = mockERC20.balanceOf(developer);
+        uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
+        uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
+
+        // send transaction
+        vm.prank(sender);
+        bridge.initiateTransaction(
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            payable(address(receiver)),
+            payable(address(0)),
+            developer,
+            developerFeeBps,
             "",
             ""
         );
 
         // check balances after transaction
-        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + protocolFee);
-        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + developerFee);
+        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + expectedDeveloperFee);
         assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees);
         assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_nativeToken() public {
-        uint256 sendValue = 1 ether;
-        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
-        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(
             sender,
             receiver,
@@ -187,25 +223,59 @@ contract UniversalBridgeTest is Test {
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
             payable(address(mockTarget)),
+            payable(address(mockTarget)),
             developer,
             developerFeeBps,
-            false,
             targetCalldata,
             ""
         );
 
         // check balances after transaction
-        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + protocolFee);
-        assertEq(developer.balance, developerBalanceBefore + developerFee);
+        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(developer.balance, developerBalanceBefore + expectedDeveloperFee);
+        assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
+        assertEq(receiver.balance, receiverBalanceBefore + sendValue);
+    }
+
+    function test_initiateTransaction_nativeToken_differentSpender() public {
+        bytes memory targetCalldata = _buildMockTargetCalldata(
+            sender,
+            receiver,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            ""
+        );
+
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        // state/balances before sending transaction
+        uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
+        uint256 developerBalanceBefore = developer.balance;
+        uint256 senderBalanceBefore = sender.balance;
+        uint256 receiverBalanceBefore = receiver.balance;
+
+        // send transaction
+        vm.prank(sender);
+        bridge.initiateTransaction{ value: sendValueWithFees }(
+            _transactionId,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            payable(address(mockTargetNonSpender)),
+            payable(address(mockSpender)),
+            developer,
+            developerFeeBps,
+            targetCalldata,
+            ""
+        );
+
+        // check balances after transaction
+        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(developer.balance, developerBalanceBefore + expectedDeveloperFee);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_nativeToken_directTransfer() public {
-        uint256 sendValue = 1 ether;
-        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
-        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = "";
 
         bytes32 _transactionId = keccak256("transaction ID");
@@ -223,25 +293,22 @@ contract UniversalBridgeTest is Test {
             address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
             sendValue,
             payable(address(receiver)),
+            payable(address(0)),
             developer,
             developerFeeBps,
-            true,
+            // true,
             targetCalldata,
             ""
         );
 
         // check balances after transaction
-        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + protocolFee);
-        assertEq(developer.balance, developerBalanceBefore + developerFee);
+        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(developer.balance, developerBalanceBefore + expectedDeveloperFee);
         assertEq(sender.balance, senderBalanceBefore - sendValueWithFees);
         assertEq(receiver.balance, receiverBalanceBefore + sendValue);
     }
 
     function test_initiateTransaction_events() public {
-        uint256 sendValue = 1 ether;
-        uint256 protocolFee = (sendValue * protocolFeeBps) / 10_000;
-        uint256 developerFee = (sendValue * developerFeeBps) / 10_000;
-        uint256 sendValueWithFees = sendValue + protocolFee + developerFee;
         bytes memory targetCalldata = _buildMockTargetCalldata(sender, receiver, address(mockERC20), sendValue, "");
 
         // approve amount to bridge contract
@@ -267,10 +334,74 @@ contract UniversalBridgeTest is Test {
             address(mockERC20),
             sendValue,
             payable(address(mockTarget)),
+            payable(address(mockTarget)),
             developer,
             developerFeeBps,
-            false,
             targetCalldata,
+            ""
+        );
+    }
+
+    function test_revert_invalidAmount() public {
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(UniversalBridgeV1.UniversalBridgeInvalidAmount.selector, 0));
+        bridge.initiateTransaction(
+            bytes32(0),
+            address(mockERC20),
+            0,
+            payable(address(receiver)),
+            payable(address(0)),
+            developer,
+            developerFeeBps,
+            "",
+            ""
+        );
+    }
+
+    function test_revert_mismatchedValue() public {
+        sendValueWithFees -= 1; // send less value than required
+        bytes memory targetCalldata = "";
+
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        // send transaction
+        vm.prank(sender);
+        vm.expectRevert(
+            abi.encodeWithSelector(UniversalBridgeV1.UniversalBridgeMismatchedValue.selector, sendValue, sendValue - 1)
+        );
+        bridge.initiateTransaction{ value: sendValueWithFees }(
+            _transactionId,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            payable(address(receiver)),
+            payable(address(0)),
+            developer,
+            developerFeeBps,
+            targetCalldata,
+            ""
+        );
+    }
+
+    function test_revert_erc20_directTransfer_nonZeroMsgValue() public {
+        // approve amount to bridge contract
+        vm.prank(sender);
+        mockERC20.approve(address(bridge), sendValueWithFees);
+
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        // send transaction
+        vm.prank(sender);
+        vm.expectRevert(UniversalBridgeV1.UniversalBridgeMsgValueNotZero.selector);
+        bridge.initiateTransaction{ value: 1 }( // non-zero msg value
+            _transactionId,
+            address(mockERC20),
+            sendValue,
+            payable(address(receiver)),
+            payable(address(0)),
+            developer,
+            developerFeeBps,
+            // true,
+            "",
             ""
         );
     }
@@ -286,9 +417,10 @@ contract UniversalBridgeTest is Test {
             address(mockERC20),
             1,
             payable(address(receiver)),
+            payable(address(0)),
             developer,
             developerFeeBps,
-            true,
+            // true,
             "",
             ""
         );
@@ -305,9 +437,10 @@ contract UniversalBridgeTest is Test {
             address(mockERC20),
             1,
             payable(address(receiver)),
+            payable(address(0)),
             developer,
             developerFeeBps,
-            true,
+            // true,
             "",
             ""
         );
@@ -324,9 +457,9 @@ contract UniversalBridgeTest is Test {
             address(mockERC20),
             1,
             payable(address(receiver)),
+            payable(address(0)),
             developer,
             developerFeeBps,
-            true,
             "",
             ""
         );

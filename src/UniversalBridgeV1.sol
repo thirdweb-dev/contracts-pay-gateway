@@ -140,9 +140,9 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         address tokenAddress,
         uint256 tokenAmount,
         address payable forwardAddress,
+        address payable spenderAddress,
         address payable developerFeeRecipient,
         uint256 developerFeeBps,
-        bool directTransfer,
         bytes calldata callData,
         bytes calldata extraData
     ) external payable nonReentrant onlyProxy {
@@ -161,40 +161,33 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         if (tokenAmount == 0) {
             revert UniversalBridgeInvalidAmount(tokenAmount);
         }
-        uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
 
         // mark the pay request as processed
         _universalBridgeStorage().processed[transactionId] = true;
 
+        uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
+
         // distribute fees
         uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, developerFeeRecipient, developerFeeBps);
 
-        // determine native value to send
         if (_isNativeToken(tokenAddress)) {
             sendValue = msg.value - totalFeeAmount;
 
             if (sendValue < tokenAmount) {
                 revert UniversalBridgeMismatchedValue(tokenAmount, sendValue);
             }
-        }
-
-        if (directTransfer) {
-            if (_isNativeToken(tokenAddress)) {
-                _call(forwardAddress, sendValue, "");
-            } else {
-                if (msg.value != 0) {
-                    revert UniversalBridgeMsgValueNotZero();
-                }
-
-                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, forwardAddress, tokenAmount);
+            _call(forwardAddress, sendValue, callData); // calldata empty for direct transfer
+        } else if (callData.length == 0) {
+            if (msg.value != 0) {
+                revert UniversalBridgeMsgValueNotZero();
             }
+            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, forwardAddress, tokenAmount);
         } else {
-            if (!_isNativeToken(tokenAddress)) {
-                // pull user funds
-                SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
-                SafeTransferLib.safeApprove(tokenAddress, forwardAddress, tokenAmount);
-            }
+            // pull user funds
+            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
 
+            // approve to spender address and call forward address -- both will be same in most cases
+            SafeTransferLib.safeApprove(tokenAddress, spenderAddress, tokenAmount);
             _call(forwardAddress, sendValue, callData);
         }
 
