@@ -92,6 +92,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, Ownable, R
     error UniversalBridgePaused();
     error UniversalBridgeRestrictedAddress();
     error UniversalBridgeVerificationFailed();
+    error UniversalBridgeRequestExpired(uint256 expirationTimestamp);
 
     constructor() {
         _disableInitializers();
@@ -250,6 +251,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, Ownable, R
         TransactionRequest calldata req,
         bytes calldata signature
     ) private view returns (bool) {
+        if (req.expirationTimestamp < block.timestamp) {
+            revert UniversalBridgeRequestExpired(req.expirationTimestamp);
+        }
+
         bool processed = _universalBridgeStorage().processed[req.transactionId];
 
         bytes32 structHash = keccak256(

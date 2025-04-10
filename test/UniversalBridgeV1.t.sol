@@ -451,6 +451,7 @@ contract UniversalBridgeTest is Test {
         req.transactionId = _transactionId;
         req.tokenAddress = address(mockERC20);
         req.tokenAmount = 0;
+        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -532,6 +533,7 @@ contract UniversalBridgeTest is Test {
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.transactionId = _transactionId;
+        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -554,6 +556,7 @@ contract UniversalBridgeTest is Test {
 
         req.transactionId = _transactionId;
         req.forwardAddress = payable(address(receiver));
+        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -577,6 +580,7 @@ contract UniversalBridgeTest is Test {
         req.transactionId = _transactionId;
         req.tokenAddress = address(mockERC20);
         req.forwardAddress = payable(address(receiver));
+        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
