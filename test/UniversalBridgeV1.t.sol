@@ -35,6 +35,7 @@ contract UniversalBridgeTest is Test {
     address payable internal sender;
     address payable internal receiver;
     address payable internal developer;
+    address internal operator;
 
     uint256 internal protocolFeeBps;
     uint256 internal developerFeeBps;
@@ -56,6 +57,7 @@ contract UniversalBridgeTest is Test {
         sender = payable(vm.addr(3));
         receiver = payable(vm.addr(4));
         developer = payable(vm.addr(5));
+        operator = payable(vm.addr(6));
 
         protocolFeeBps = 30; // 0.3%
         developerFeeBps = 10; // 0.1%
@@ -68,7 +70,7 @@ contract UniversalBridgeTest is Test {
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
         bridge = UniversalBridgeV1(
-            address(new UniversalBridgeProxy(impl, owner, protocolFeeRecipient, protocolFeeBps))
+            address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient, protocolFeeBps))
         );
 
         mockERC20 = new MockERC20("Token", "TKN");
@@ -163,7 +165,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -207,7 +209,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -248,7 +250,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -294,7 +296,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -340,7 +342,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -380,7 +382,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -424,7 +426,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -455,7 +457,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -484,7 +486,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -517,7 +519,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -537,7 +539,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -560,7 +562,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 
@@ -584,7 +586,7 @@ contract UniversalBridgeTest is Test {
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
-            1, // sign with operator private key
+            6, // sign with operator private key
             req
         );
 

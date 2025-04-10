@@ -7,7 +7,7 @@ import { EIP712 } from "lib/solady/src/utils/EIP712.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
 import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
 import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
-import { Ownable } from "lib/solady/src/auth/Ownable.sol";
+import { OwnableRoles } from "lib/solady/src/auth/OwnableRoles.sol";
 import { UUPSUpgradeable } from "lib/solady/src/utils/UUPSUpgradeable.sol";
 import { Initializable } from "lib/solady/src/utils/Initializable.sol";
 
@@ -37,7 +37,7 @@ library UniversalBridgeStorage {
     }
 }
 
-contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, Ownable, ReentrancyGuard {
+contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRoles, ReentrancyGuard {
     using ECDSA for bytes32;
 
     /*///////////////////////////////////////////////////////////////
@@ -46,6 +46,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, Ownable, R
 
     address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 private constant MAX_PROTOCOL_FEE_BPS = 300; // 3%
+    uint256 private constant _OPERATOR_ROLE = 1 << 0;
 
     struct TransactionRequest {
         bytes32 transactionId;
@@ -100,10 +101,12 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, Ownable, R
 
     function initialize(
         address _owner,
+        address _operator,
         address payable _protocolFeeRecipient,
         uint256 _protocolFeeBps
     ) external initializer {
         _initializeOwner(_owner);
+        _grantRoles(_operator, _OPERATOR_ROLE);
         _setProtocolFeeInfo(_protocolFeeRecipient, _protocolFeeBps);
     }
 
@@ -275,7 +278,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, Ownable, R
 
         bytes32 digest = _hashTypedData(structHash);
         address recovered = digest.recover(signature);
-        bool valid = recovered == owner() && !processed;
+        bool valid = hasAllRoles(recovered, _OPERATOR_ROLE) && !processed;
 
         return valid;
     }

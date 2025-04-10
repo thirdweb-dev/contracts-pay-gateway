@@ -13,6 +13,7 @@ contract UniversalBridgeProxy {
     constructor(
         address _implementation,
         address _owner,
+        address _operator,
         address payable _protocolFeeRecipient,
         uint256 _protocolFeeBps
     ) {
@@ -33,8 +34,9 @@ contract UniversalBridgeProxy {
         }
 
         bytes memory data = abi.encodeWithSignature(
-            "initialize(address,address,uint256)",
+            "initialize(address,address,address,uint256)",
             _owner,
+            _operator,
             _protocolFeeRecipient,
             _protocolFeeBps
         );
