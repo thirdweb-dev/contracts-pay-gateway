@@ -3,9 +3,11 @@ pragma solidity ^0.8.22;
 
 /// @author thirdweb
 
+import { EIP712 } from "lib/solady/src/utils/EIP712.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
 import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
-import { Ownable } from "lib/solady/src/auth/Ownable.sol";
+import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
+import { OwnableRoles } from "lib/solady/src/auth/OwnableRoles.sol";
 import { UUPSUpgradeable } from "lib/solady/src/utils/UUPSUpgradeable.sol";
 import { Initializable } from "lib/solady/src/utils/Initializable.sol";
 
@@ -35,13 +37,34 @@ library UniversalBridgeStorage {
     }
 }
 
-contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, ReentrancyGuard {
+contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRoles, ReentrancyGuard {
+    using ECDSA for bytes32;
+
     /*///////////////////////////////////////////////////////////////
                         State, constants, structs
     //////////////////////////////////////////////////////////////*/
 
     address private constant NATIVE_TOKEN_ADDRESS = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint256 private constant MAX_PROTOCOL_FEE_BPS = 300; // 3%
+    uint256 private constant _OPERATOR_ROLE = 1 << 0;
+
+    struct TransactionRequest {
+        bytes32 transactionId;
+        address tokenAddress;
+        uint256 tokenAmount;
+        address payable forwardAddress;
+        address payable spenderAddress;
+        uint256 expirationTimestamp;
+        address payable developerFeeRecipient;
+        uint256 developerFeeBps;
+        bytes callData;
+        bytes extraData;
+    }
+
+    bytes32 private constant TRANSACTION_REQUEST_TYPEHASH =
+        keccak256(
+            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
+        );
 
     /*///////////////////////////////////////////////////////////////
                                 Events
@@ -69,6 +92,9 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
     error UniversalBridgeZeroAddress();
     error UniversalBridgePaused();
     error UniversalBridgeRestrictedAddress();
+    error UniversalBridgeVerificationFailed();
+    error UniversalBridgeRequestExpired(uint256 expirationTimestamp);
+    error UniversalBridgeTransactionAlreadyProcessed();
 
     constructor() {
         _disableInitializers();
@@ -76,10 +102,12 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
 
     function initialize(
         address _owner,
+        address _operator,
         address payable _protocolFeeRecipient,
         uint256 _protocolFeeBps
     ) external initializer {
         _initializeOwner(_owner);
+        _grantRoles(_operator, _OPERATOR_ROLE);
         _setProtocolFeeInfo(_protocolFeeRecipient, _protocolFeeBps);
     }
 
@@ -136,69 +164,71 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
       transactions. This function will allow us to standardize the logging and fee splitting across all providers.
      */
     function initiateTransaction(
-        bytes32 transactionId,
-        address tokenAddress,
-        uint256 tokenAmount,
-        address payable forwardAddress,
-        address payable spenderAddress,
-        address payable developerFeeRecipient,
-        uint256 developerFeeBps,
-        bytes calldata callData,
-        bytes calldata extraData
+        TransactionRequest calldata req,
+        bytes calldata signature
     ) external payable nonReentrant onlyProxy {
+        // verify req
+        if (!_verifyTransactionReq(req, signature)) {
+            revert UniversalBridgeVerificationFailed();
+        }
+        // mark the pay request as processed
+        _universalBridgeStorage().processed[req.transactionId] = true;
+
         if (_universalBridgeStorage().isPaused) {
             revert UniversalBridgePaused();
         }
 
         if (
-            _universalBridgeStorage().isRestricted[forwardAddress] ||
-            _universalBridgeStorage().isRestricted[tokenAddress]
+            _universalBridgeStorage().isRestricted[req.forwardAddress] ||
+            _universalBridgeStorage().isRestricted[req.tokenAddress]
         ) {
             revert UniversalBridgeRestrictedAddress();
         }
 
         // verify amount
-        if (tokenAmount == 0) {
-            revert UniversalBridgeInvalidAmount(tokenAmount);
+        if (req.tokenAmount == 0) {
+            revert UniversalBridgeInvalidAmount(req.tokenAmount);
         }
-
-        // mark the pay request as processed
-        _universalBridgeStorage().processed[transactionId] = true;
 
         uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
 
         // distribute fees
-        uint256 totalFeeAmount = _distributeFees(tokenAddress, tokenAmount, developerFeeRecipient, developerFeeBps);
+        uint256 totalFeeAmount = _distributeFees(
+            req.tokenAddress,
+            req.tokenAmount,
+            req.developerFeeRecipient,
+            req.developerFeeBps
+        );
 
-        if (_isNativeToken(tokenAddress)) {
+        if (_isNativeToken(req.tokenAddress)) {
             sendValue = msg.value - totalFeeAmount;
 
-            if (sendValue < tokenAmount) {
-                revert UniversalBridgeMismatchedValue(tokenAmount, sendValue);
+            if (sendValue < req.tokenAmount) {
+                revert UniversalBridgeMismatchedValue(req.tokenAmount, sendValue);
             }
-            _call(forwardAddress, sendValue, callData); // calldata empty for direct transfer
-        } else if (callData.length == 0) {
+            _call(req.forwardAddress, sendValue, req.callData); // calldata empty for direct transfer
+        } else if (req.callData.length == 0) {
             if (msg.value != 0) {
                 revert UniversalBridgeMsgValueNotZero();
             }
-            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, forwardAddress, tokenAmount);
+            SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
         } else {
             // pull user funds
-            SafeTransferLib.safeTransferFrom(tokenAddress, msg.sender, address(this), tokenAmount);
+            SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, address(this), req.tokenAmount);
 
             // approve to spender address and call forward address -- both will be same in most cases
-            SafeTransferLib.safeApprove(tokenAddress, spenderAddress, tokenAmount);
-            _call(forwardAddress, sendValue, callData);
+            SafeTransferLib.safeApprove(req.tokenAddress, req.spenderAddress, req.tokenAmount);
+            _call(req.forwardAddress, sendValue, req.callData);
         }
 
         emit TransactionInitiated(
             msg.sender,
-            transactionId,
-            tokenAddress,
-            tokenAmount,
-            developerFeeRecipient,
-            developerFeeBps,
-            extraData
+            req.transactionId,
+            req.tokenAddress,
+            req.tokenAmount,
+            req.developerFeeRecipient,
+            req.developerFeeBps,
+            req.extraData
         );
     }
 
@@ -220,6 +250,43 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
     /*///////////////////////////////////////////////////////////////
                             Internal functions
     //////////////////////////////////////////////////////////////*/
+
+    function _verifyTransactionReq(
+        TransactionRequest calldata req,
+        bytes calldata signature
+    ) private view returns (bool) {
+        if (req.expirationTimestamp < block.timestamp) {
+            revert UniversalBridgeRequestExpired(req.expirationTimestamp);
+        }
+
+        bool processed = _universalBridgeStorage().processed[req.transactionId];
+
+        if (processed) {
+            revert UniversalBridgeTransactionAlreadyProcessed();
+        }
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                TRANSACTION_REQUEST_TYPEHASH,
+                req.transactionId,
+                req.tokenAddress,
+                req.tokenAmount,
+                req.forwardAddress,
+                req.spenderAddress,
+                req.expirationTimestamp,
+                req.developerFeeRecipient,
+                req.developerFeeBps,
+                keccak256(req.callData),
+                keccak256(req.extraData)
+            )
+        );
+
+        bytes32 digest = _hashTypedData(structHash);
+        address recovered = digest.recover(signature);
+        bool valid = hasAllRoles(recovered, _OPERATOR_ROLE);
+
+        return valid;
+    }
 
     function _distributeFees(
         address tokenAddress,
@@ -253,6 +320,11 @@ contract UniversalBridgeV1 is Initializable, UUPSUpgradeable, Ownable, Reentranc
         }
 
         return totalFeeAmount;
+    }
+
+    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
+        name = "UniversalBridgeV1";
+        version = "1";
     }
 
     function _setProtocolFeeInfo(address payable feeRecipient, uint256 feeBps) internal {
