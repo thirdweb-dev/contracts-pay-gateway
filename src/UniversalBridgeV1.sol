@@ -94,6 +94,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
     error UniversalBridgeRestrictedAddress();
     error UniversalBridgeVerificationFailed();
     error UniversalBridgeRequestExpired(uint256 expirationTimestamp);
+    error UniversalBridgeTransactionAlreadyProcessed();
 
     constructor() {
         _disableInitializers();
@@ -260,6 +261,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
 
         bool processed = _universalBridgeStorage().processed[req.transactionId];
 
+        if (processed) {
+            revert UniversalBridgeTransactionAlreadyProcessed();
+        }
+
         bytes32 structHash = keccak256(
             abi.encode(
                 TRANSACTION_REQUEST_TYPEHASH,
@@ -278,7 +283,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
 
         bytes32 digest = _hashTypedData(structHash);
         address recovered = digest.recover(signature);
-        bool valid = hasAllRoles(recovered, _OPERATOR_ROLE) && !processed;
+        bool valid = hasAllRoles(recovered, _OPERATOR_ROLE);
 
         return valid;
     }
