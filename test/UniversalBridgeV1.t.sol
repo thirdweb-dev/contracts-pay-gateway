@@ -35,6 +35,7 @@ contract UniversalBridgeTest is Test {
     address payable internal sender;
     address payable internal receiver;
     address payable internal developer;
+    address internal operator;
 
     uint256 internal protocolFeeBps;
     uint256 internal developerFeeBps;
@@ -44,12 +45,19 @@ contract UniversalBridgeTest is Test {
     uint256 internal expectedDeveloperFee;
     uint256 internal sendValueWithFees;
 
+    bytes32 internal typehashTransactionRequest;
+    bytes32 internal nameHash;
+    bytes32 internal versionHash;
+    bytes32 internal typehashEip712;
+    bytes32 internal domainSeparator;
+
     function setUp() public {
         owner = payable(vm.addr(1));
         protocolFeeRecipient = payable(vm.addr(2));
         sender = payable(vm.addr(3));
         receiver = payable(vm.addr(4));
         developer = payable(vm.addr(5));
+        operator = payable(vm.addr(6));
 
         protocolFeeBps = 30; // 0.3%
         developerFeeBps = 10; // 0.1%
@@ -62,7 +70,7 @@ contract UniversalBridgeTest is Test {
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
         bridge = UniversalBridgeV1(
-            address(new UniversalBridgeProxy(impl, owner, protocolFeeRecipient, protocolFeeBps))
+            address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient, protocolFeeBps))
         );
 
         mockERC20 = new MockERC20("Token", "TKN");
@@ -73,6 +81,17 @@ contract UniversalBridgeTest is Test {
         // fund the sender
         mockERC20.mint(sender, 1000 ether);
         vm.deal(sender, 1000 ether);
+
+        // EIP712
+        typehashTransactionRequest = keccak256(
+            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
+        );
+        nameHash = keccak256(bytes("UniversalBridgeV1"));
+        versionHash = keccak256(bytes("1"));
+        typehashEip712 = keccak256(
+            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+        );
+        domainSeparator = keccak256(abi.encode(typehashEip712, nameHash, versionHash, block.chainid, address(bridge)));
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -89,6 +108,36 @@ contract UniversalBridgeTest is Test {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
     }
 
+    function _prepareAndSignData(
+        uint256 _operatorPrivateKey,
+        UniversalBridgeV1.TransactionRequest memory req
+    ) internal view returns (bytes memory signature) {
+        bytes memory dataToHash;
+        {
+            dataToHash = abi.encode(
+                typehashTransactionRequest,
+                req.transactionId,
+                req.tokenAddress,
+                req.tokenAmount,
+                req.forwardAddress,
+                req.spenderAddress,
+                req.expirationTimestamp,
+                req.developerFeeRecipient,
+                req.developerFeeBps,
+                keccak256(req.callData),
+                keccak256(req.extraData)
+            );
+        }
+
+        {
+            bytes32 _structHash = keccak256(dataToHash);
+            bytes32 typedDataHash = keccak256(abi.encodePacked("\x19\x01", domainSeparator, _structHash));
+            (uint8 v, bytes32 r, bytes32 s) = vm.sign(_operatorPrivateKey, typedDataHash);
+
+            signature = abi.encodePacked(r, s, v);
+        }
+    }
+
     /*///////////////////////////////////////////////////////////////
                     Test `initiateTransaction`
     //////////////////////////////////////////////////////////////*/
@@ -100,7 +149,25 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockTarget));
+        req.spenderAddress = payable(address(mockTarget));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // state/balances before sending transaction
         uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
@@ -110,17 +177,7 @@ contract UniversalBridgeTest is Test {
 
         // send transaction
         vm.prank(sender);
-        bridge.initiateTransaction(
-            _transactionId,
-            address(mockERC20),
-            sendValue,
-            payable(address(mockTarget)),
-            payable(address(mockTarget)),
-            developer,
-            developerFeeBps,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
 
         // check balances after transaction
         assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
@@ -136,7 +193,25 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockTargetNonSpender));
+        req.spenderAddress = payable(address(mockSpender));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // state/balances before sending transaction
         uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
@@ -146,17 +221,7 @@ contract UniversalBridgeTest is Test {
 
         // send transaction
         vm.prank(sender);
-        bridge.initiateTransaction(
-            _transactionId,
-            address(mockERC20),
-            sendValue,
-            payable(address(mockTargetNonSpender)),
-            payable(address(mockSpender)),
-            developer,
-            developerFeeBps,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
 
         // check balances after transaction
         assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
@@ -170,7 +235,24 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(receiver));
+        req.spenderAddress = payable(address(0));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // state/balances before sending transaction
         uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
@@ -180,17 +262,7 @@ contract UniversalBridgeTest is Test {
 
         // send transaction
         vm.prank(sender);
-        bridge.initiateTransaction(
-            _transactionId,
-            address(mockERC20),
-            sendValue,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            "",
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
 
         // check balances after transaction
         assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
@@ -208,7 +280,25 @@ contract UniversalBridgeTest is Test {
             ""
         );
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockTarget));
+        req.spenderAddress = payable(address(mockTarget));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // state/balances before sending transaction
         uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
@@ -218,17 +308,7 @@ contract UniversalBridgeTest is Test {
 
         // send transaction
         vm.prank(sender);
-        bridge.initiateTransaction{ value: sendValueWithFees }(
-            _transactionId,
-            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
-            sendValue,
-            payable(address(mockTarget)),
-            payable(address(mockTarget)),
-            developer,
-            developerFeeBps,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction{ value: sendValueWithFees }(req, _signature);
 
         // check balances after transaction
         assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
@@ -246,7 +326,25 @@ contract UniversalBridgeTest is Test {
             ""
         );
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockTargetNonSpender));
+        req.spenderAddress = payable(address(mockSpender));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // state/balances before sending transaction
         uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
@@ -256,17 +354,7 @@ contract UniversalBridgeTest is Test {
 
         // send transaction
         vm.prank(sender);
-        bridge.initiateTransaction{ value: sendValueWithFees }(
-            _transactionId,
-            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
-            sendValue,
-            payable(address(mockTargetNonSpender)),
-            payable(address(mockSpender)),
-            developer,
-            developerFeeBps,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction{ value: sendValueWithFees }(req, _signature);
 
         // check balances after transaction
         assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
@@ -278,7 +366,25 @@ contract UniversalBridgeTest is Test {
     function test_initiateTransaction_nativeToken_directTransfer() public {
         bytes memory targetCalldata = "";
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(receiver));
+        req.spenderAddress = payable(address(0));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // state/balances before sending transaction
         uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
@@ -288,18 +394,7 @@ contract UniversalBridgeTest is Test {
 
         // send transaction
         vm.prank(sender);
-        bridge.initiateTransaction{ value: sendValueWithFees }(
-            _transactionId,
-            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
-            sendValue,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            // true,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction{ value: sendValueWithFees }(req, _signature);
 
         // check balances after transaction
         assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
@@ -315,7 +410,25 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockTarget));
+        req.spenderAddress = payable(address(mockTarget));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // send transaction
         vm.prank(sender);
@@ -329,57 +442,60 @@ contract UniversalBridgeTest is Test {
             developerFeeBps,
             ""
         );
-        bridge.initiateTransaction(
-            _transactionId,
-            address(mockERC20),
-            sendValue,
-            payable(address(mockTarget)),
-            payable(address(mockTarget)),
-            developer,
-            developerFeeBps,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
     }
 
     function test_revert_invalidAmount() public {
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = 0;
+        req.expirationTimestamp = 1000;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
+
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(UniversalBridgeV1.UniversalBridgeInvalidAmount.selector, 0));
-        bridge.initiateTransaction(
-            bytes32(0),
-            address(mockERC20),
-            0,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            "",
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
     }
 
     function test_revert_mismatchedValue() public {
         sendValueWithFees -= 1; // send less value than required
         bytes memory targetCalldata = "";
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(receiver));
+        req.spenderAddress = payable(address(0));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // send transaction
         vm.prank(sender);
         vm.expectRevert(
             abi.encodeWithSelector(UniversalBridgeV1.UniversalBridgeMismatchedValue.selector, sendValue, sendValue - 1)
         );
-        bridge.initiateTransaction{ value: sendValueWithFees }(
-            _transactionId,
-            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
-            sendValue,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            targetCalldata,
-            ""
-        );
+        bridge.initiateTransaction{ value: sendValueWithFees }(req, _signature);
     }
 
     function test_revert_erc20_directTransfer_nonZeroMsgValue() public {
@@ -387,81 +503,141 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(receiver));
+        req.spenderAddress = payable(address(0));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = "";
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
 
         // send transaction
         vm.prank(sender);
         vm.expectRevert(UniversalBridgeV1.UniversalBridgeMsgValueNotZero.selector);
-        bridge.initiateTransaction{ value: 1 }( // non-zero msg value
-            _transactionId,
-            address(mockERC20),
-            sendValue,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            // true,
-            "",
-            ""
-        );
+        bridge.initiateTransaction{ value: 1 }(req, _signature); // non-zero msg value
     }
 
     function test_revert_paused() public {
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.expirationTimestamp = 1000;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
+
         vm.prank(owner);
         bridge.pause(true);
 
         vm.prank(sender);
         vm.expectRevert(UniversalBridgeV1.UniversalBridgePaused.selector);
-        bridge.initiateTransaction(
-            bytes32(0),
-            address(mockERC20),
-            1,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            // true,
-            "",
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
     }
 
     function test_revert_restrictedForwardAddress() public {
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.forwardAddress = payable(address(receiver));
+        req.expirationTimestamp = 1000;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
+
         vm.prank(owner);
         bridge.restrictAddress(address(receiver), true);
 
         vm.prank(sender);
         vm.expectRevert(UniversalBridgeV1.UniversalBridgeRestrictedAddress.selector);
-        bridge.initiateTransaction(
-            bytes32(0),
-            address(mockERC20),
-            1,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            // true,
-            "",
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
     }
 
     function test_revert_restrictedTokenAddress() public {
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
+        bytes32 _transactionId = keccak256("transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.forwardAddress = payable(address(receiver));
+        req.expirationTimestamp = 1000;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
+
         vm.prank(owner);
         bridge.restrictAddress(address(mockERC20), true);
 
         vm.prank(sender);
         vm.expectRevert(UniversalBridgeV1.UniversalBridgeRestrictedAddress.selector);
-        bridge.initiateTransaction(
-            bytes32(0),
-            address(mockERC20),
-            1,
-            payable(address(receiver)),
-            payable(address(0)),
-            developer,
-            developerFeeBps,
-            "",
-            ""
-        );
+        bridge.initiateTransaction(req, _signature);
     }
+
+    //     function test_POC() public {
+    //         // mock usdc
+    //         MockERC20 usdc = new MockERC20("usdc", "usdc");
+    //         usdc.mint(sender, 100 ether);
+    //         // approve usdc to bridge contract
+    //         vm.prank(sender);
+    //         usdc.approve(address(bridge), 95 ether);
+
+    //         // setup arbitrary token and malicious sender
+    //         MockERC20 tokenU = new MockERC20("tokenU", "tokenU");
+    //         address initiator = payable(vm.addr(9));
+    //         address malicousSpender = payable(vm.addr(8));
+    //         tokenU.mint(initiator, 100 ether);
+    //         // approve tokenU to bridge contract
+    //         vm.prank(initiator);
+    //         tokenU.approve(address(bridge), 100 ether);
+
+    //         bytes memory targetCalldata = abi.encodeWithSignature(
+    //             "transferFrom(address,address,uint256)",
+    //             sender,
+    //             initiator,
+    //             95 ether
+    //         );
+
+    //         bytes32 _transactionId = keccak256("transaction ID");
+
+    //         // send transaction
+    //         vm.prank(initiator);
+    //         bridge.initiateTransaction(
+    //             _transactionId,
+    //             address(tokenU),
+    //             100,
+    //             payable(address(usdc)),
+    //             payable(address(usdc)),
+    //             developer,
+    //             developerFeeBps,
+    //             targetCalldata,
+    //             ""
+    //         );
+
+    //         assertEq(usdc.balanceOf(initiator), 95 ether);
+    //     }
 }
