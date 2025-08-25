@@ -12,6 +12,7 @@ import { MockERC20 } from "./utils/MockERC20.sol";
 import { MockTarget } from "./utils/MockTarget.sol";
 import { MockTargetNonSpender } from "./utils/MockTargetNonSpender.sol";
 import { MockSpender } from "./utils/MockSpender.sol";
+import { MockRefundTarget } from "./utils/MockRefundTarget.sol";
 
 contract UniversalBridgeTest is Test {
     event TransactionInitiated(
@@ -21,6 +22,8 @@ contract UniversalBridgeTest is Test {
         uint256 tokenAmount,
         address developerFeeRecipient,
         uint256 developerFeeBps,
+        uint256 developerFee,
+        uint256 protocolFee,
         bytes extraData
     );
 
@@ -29,6 +32,7 @@ contract UniversalBridgeTest is Test {
     MockTarget internal mockTarget;
     MockTargetNonSpender internal mockTargetNonSpender;
     MockSpender internal mockSpender;
+    MockRefundTarget internal mockRefundTarget;
 
     address payable internal owner;
     address payable internal protocolFeeRecipient;
@@ -77,6 +81,7 @@ contract UniversalBridgeTest is Test {
         mockTarget = new MockTarget();
         mockSpender = new MockSpender();
         mockTargetNonSpender = new MockTargetNonSpender(address(mockSpender));
+        mockRefundTarget = new MockRefundTarget();
 
         // fund the sender
         mockERC20.mint(sender, 1000 ether);
@@ -106,6 +111,17 @@ contract UniversalBridgeTest is Test {
         string memory _message
     ) internal pure returns (bytes memory data) {
         data = abi.encode(_sender, _receiver, _token, _sendValue, _message);
+    }
+
+    function _buildMockRefundTargetCalldata(
+        address _sender,
+        address _receiver,
+        address _token,
+        uint256 _sendValue,
+        uint256 _refundAmount,
+        string memory _message
+    ) internal pure returns (bytes memory data) {
+        data = abi.encode(_sender, _receiver, _token, _sendValue, _refundAmount, _message);
     }
 
     function _prepareAndSignData(
@@ -440,6 +456,8 @@ contract UniversalBridgeTest is Test {
             sendValue,
             developer,
             developerFeeBps,
+            expectedDeveloperFee,
+            expectedProtocolFee,
             ""
         );
         bridge.initiateTransaction(req, _signature);
@@ -596,6 +614,113 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         vm.expectRevert(UniversalBridgeV1.UniversalBridgeRestrictedAddress.selector);
         bridge.initiateTransaction(req, _signature);
+    }
+
+    /*///////////////////////////////////////////////////////////////
+                        Test refund logic
+    //////////////////////////////////////////////////////////////*/
+
+    function test_initiateTransaction_nativeToken_withRefund() public {
+        uint256 refundAmount = 10 ether; // Amount to be refunded by the target contract
+        bytes memory targetCalldata = _buildMockRefundTargetCalldata(
+            sender,
+            receiver,
+            address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE),
+            sendValue,
+            refundAmount,
+            "native refund test"
+        );
+
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
+        bytes32 _transactionId = keccak256("refund transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockRefundTarget));
+        req.spenderAddress = payable(address(mockRefundTarget));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
+
+        // state/balances before sending transaction
+        uint256 protocolFeeRecipientBalanceBefore = protocolFeeRecipient.balance;
+        uint256 developerBalanceBefore = developer.balance;
+        uint256 senderBalanceBefore = sender.balance;
+        uint256 receiverBalanceBefore = receiver.balance;
+
+        // send transaction
+        vm.prank(sender);
+        bridge.initiateTransaction{ value: sendValueWithFees }(req, _signature);
+
+        // check balances after transaction
+        assertEq(protocolFeeRecipient.balance, protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(developer.balance, developerBalanceBefore + expectedDeveloperFee);
+        // Sender should get the refund back
+        assertEq(sender.balance, senderBalanceBefore - sendValueWithFees + refundAmount);
+        assertEq(receiver.balance, receiverBalanceBefore + sendValue - refundAmount);
+    }
+
+    function test_initiateTransaction_erc20_withRefund() public {
+        uint256 refundAmount = 5 ether; // Amount to be refunded by the target contract
+        bytes memory targetCalldata = _buildMockRefundTargetCalldata(
+            sender,
+            receiver,
+            address(mockERC20),
+            sendValue,
+            refundAmount,
+            "erc20 refund test"
+        );
+
+        // approve amount to bridge contract (including refund that will come back)
+        vm.prank(sender);
+        mockERC20.approve(address(bridge), sendValueWithFees);
+
+
+        // create transaction request
+        UniversalBridgeV1.TransactionRequest memory req;
+        bytes32 _transactionId = keccak256("erc20 refund transaction ID");
+
+        req.transactionId = _transactionId;
+        req.tokenAddress = address(mockERC20);
+        req.tokenAmount = sendValue;
+        req.forwardAddress = payable(address(mockRefundTarget));
+        req.spenderAddress = payable(address(mockRefundTarget));
+        req.expirationTimestamp = 1000;
+        req.developerFeeRecipient = developer;
+        req.developerFeeBps = developerFeeBps;
+        req.callData = targetCalldata;
+
+        // generate signature
+        bytes memory _signature = _prepareAndSignData(
+            6, // sign with operator private key
+            req
+        );
+
+        // state/balances before sending transaction
+        uint256 protocolFeeRecipientBalanceBefore = mockERC20.balanceOf(protocolFeeRecipient);
+        uint256 developerBalanceBefore = mockERC20.balanceOf(developer);
+        uint256 senderBalanceBefore = mockERC20.balanceOf(sender);
+        uint256 receiverBalanceBefore = mockERC20.balanceOf(receiver);
+
+        // send transaction
+        vm.prank(sender);
+        bridge.initiateTransaction(req, _signature);
+
+        // check balances after transaction
+        assertEq(mockERC20.balanceOf(protocolFeeRecipient), protocolFeeRecipientBalanceBefore + expectedProtocolFee);
+        assertEq(mockERC20.balanceOf(developer), developerBalanceBefore + expectedDeveloperFee);
+        // Sender should get the refund back
+        assertEq(mockERC20.balanceOf(sender), senderBalanceBefore - sendValueWithFees + refundAmount);
+        assertEq(mockERC20.balanceOf(receiver), receiverBalanceBefore + sendValue - refundAmount);
     }
 
     //     function test_POC() public {

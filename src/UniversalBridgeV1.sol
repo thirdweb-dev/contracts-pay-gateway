@@ -4,6 +4,7 @@ pragma solidity ^0.8.22;
 /// @author thirdweb
 
 import { EIP712 } from "lib/solady/src/utils/EIP712.sol";
+import { ERC20 } from "lib/solady/src/tokens/ERC20.sol";
 import { SafeTransferLib } from "lib/solady/src/utils/SafeTransferLib.sol";
 import { ReentrancyGuard } from "lib/solady/src/utils/ReentrancyGuard.sol";
 import { ECDSA } from "lib/solady/src/utils/ECDSA.sol";
@@ -77,6 +78,8 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 tokenAmount,
         address developerFeeRecipient,
         uint256 developerFeeBps,
+        uint256 developerFee,
+        uint256 protocolFee,
         bytes extraData
     );
 
@@ -84,17 +87,17 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
                                 Errors
     //////////////////////////////////////////////////////////////*/
 
-    error UniversalBridgeMismatchedValue(uint256 expected, uint256 actual);
-    error UniversalBridgeInvalidAmount(uint256 amount);
-    error UniversalBridgeFailedToForward();
-    error UniversalBridgeMsgValueNotZero();
-    error UniversalBridgeInvalidFeeBps();
-    error UniversalBridgeZeroAddress();
-    error UniversalBridgePaused();
-    error UniversalBridgeRestrictedAddress();
-    error UniversalBridgeVerificationFailed();
-    error UniversalBridgeRequestExpired(uint256 expirationTimestamp);
-    error UniversalBridgeTransactionAlreadyProcessed();
+    error UniversalBridgeMismatchedValue(uint256 expected, uint256 actual); // 0x530155bb
+    error UniversalBridgeInvalidAmount(uint256 amount); // 0xd7f0a07d
+    error UniversalBridgeFailedToForward(); // 0xefe5f7f4
+    error UniversalBridgeMsgValueNotZero(); // 0xd17e34f7
+    error UniversalBridgeInvalidFeeBps(); // 0x56e28974
+    error UniversalBridgeZeroAddress(); // 0x7ebab376
+    error UniversalBridgePaused(); // 0x46ecd2c9
+    error UniversalBridgeRestrictedAddress(); // 0xec7d39b3
+    error UniversalBridgeVerificationFailed(); // 0x1573f645
+    error UniversalBridgeRequestExpired(uint256 expirationTimestamp); // 0xb4ebecd8
+    error UniversalBridgeTransactionAlreadyProcessed(); // 0x7d21ae4b
 
     constructor() {
         _disableInitializers();
@@ -190,10 +193,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             revert UniversalBridgeInvalidAmount(req.tokenAmount);
         }
 
-        uint256 sendValue = msg.value; // includes bridge fee etc. (if any)
+        uint256 contractEthBalanceBefore = address(this).balance - msg.value;
 
         // distribute fees
-        uint256 totalFeeAmount = _distributeFees(
+        (uint256 totalFeeAmount, uint256 protocolFee) = _distributeFees(
             req.tokenAddress,
             req.tokenAmount,
             req.developerFeeRecipient,
@@ -201,7 +204,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         );
 
         if (_isNativeToken(req.tokenAddress)) {
-            sendValue = msg.value - totalFeeAmount;
+            uint256 sendValue = msg.value - totalFeeAmount;
 
             if (sendValue < req.tokenAmount) {
                 revert UniversalBridgeMismatchedValue(req.tokenAmount, sendValue);
@@ -213,12 +216,34 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             }
             SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, req.forwardAddress, req.tokenAmount);
         } else {
+            uint256 contractTokenBalanceBefore = ERC20(req.tokenAddress).balanceOf(address(this));
+
             // pull user funds
             SafeTransferLib.safeTransferFrom(req.tokenAddress, msg.sender, address(this), req.tokenAmount);
 
             // approve to spender address and call forward address -- both will be same in most cases
             SafeTransferLib.safeApprove(req.tokenAddress, req.spenderAddress, req.tokenAmount);
-            _call(req.forwardAddress, sendValue, req.callData);
+            _call(req.forwardAddress, msg.value, req.callData);
+            SafeTransferLib.safeApprove(req.tokenAddress, req.spenderAddress, 0); // reset approvals
+
+            uint256 contractTokenBalanceAfter = ERC20(req.tokenAddress).balanceOf(address(this));
+
+            // refund ERC20 tokens
+            if (contractTokenBalanceAfter > contractTokenBalanceBefore) {
+                SafeTransferLib.safeTransfer(
+                    req.tokenAddress,
+                    msg.sender,
+                    contractTokenBalanceAfter - contractTokenBalanceBefore
+                );
+            }
+        }
+
+        // refund ETH
+        {
+            uint256 contractEthBalanceAfter = address(this).balance;
+            if (contractEthBalanceAfter > contractEthBalanceBefore) {
+                _call(msg.sender, contractEthBalanceAfter - contractEthBalanceBefore, "");
+            }
         }
 
         emit TransactionInitiated(
@@ -228,6 +253,8 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             req.tokenAmount,
             req.developerFeeRecipient,
             req.developerFeeBps,
+            totalFeeAmount - protocolFee,
+            protocolFee,
             req.extraData
         );
     }
@@ -293,7 +320,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 tokenAmount,
         address developerFeeRecipient,
         uint256 developerFeeBps
-    ) private returns (uint256) {
+    ) private returns (uint256, uint256) {
         address protocolFeeRecipient = _universalBridgeStorage().protocolFeeRecipient;
         uint256 protocolFeeBps = _universalBridgeStorage().protocolFeeBps;
 
@@ -319,7 +346,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             }
         }
 
-        return totalFeeAmount;
+        return (totalFeeAmount, protocolFee);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
