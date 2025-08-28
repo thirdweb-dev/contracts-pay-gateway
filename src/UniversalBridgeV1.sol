@@ -144,6 +144,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         _universalBridgeStorage().isPaused = _pause;
     }
 
+    function setOwner(address _owner) external onlyOwner {
+        _setOwner(_owner);
+    }
+
     function restrictAddress(address _target, bool _restrict) external onlyOwner {
         _universalBridgeStorage().isRestricted[_target] = _restrict;
     }
