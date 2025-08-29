@@ -144,10 +144,6 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         _universalBridgeStorage().isPaused = _pause;
     }
 
-    function setOwner(address _owner) external onlyOwner {
-        _setOwner(_owner);
-    }
-
     function restrictAddress(address _target, bool _restrict) external onlyOwner {
         _universalBridgeStorage().isRestricted[_target] = _restrict;
     }
@@ -200,7 +196,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 contractEthBalanceBefore = address(this).balance - msg.value;
 
         // distribute fees
-        (uint256 totalFeeAmount, uint256 protocolFee) = _distributeFees(
+        (uint256 totalFeeAmount, uint256 protocolFee, uint256 developerFee) = _distributeFees(
             req.tokenAddress,
             req.tokenAmount,
             req.developerFeeRecipient,
@@ -257,7 +253,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             req.tokenAmount,
             req.developerFeeRecipient,
             req.developerFeeBps,
-            totalFeeAmount - protocolFee,
+            developerFee,
             protocolFee,
             req.extraData
         );
@@ -324,7 +320,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 tokenAmount,
         address developerFeeRecipient,
         uint256 developerFeeBps
-    ) private returns (uint256, uint256) {
+    ) private returns (uint256, uint256, uint256) {
         address protocolFeeRecipient = _universalBridgeStorage().protocolFeeRecipient;
         uint256 protocolFeeBps = _universalBridgeStorage().protocolFeeBps;
 
@@ -350,7 +346,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             }
         }
 
-        return (totalFeeAmount, protocolFee);
+        return (totalFeeAmount, protocolFee, developerFee);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
