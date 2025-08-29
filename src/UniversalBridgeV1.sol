@@ -196,7 +196,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 contractEthBalanceBefore = address(this).balance - msg.value;
 
         // distribute fees
-        (uint256 totalFeeAmount, uint256 protocolFee, uint256 developerFee) = _distributeFees(
+        (uint256 protocolFee, uint256 developerFee) = _distributeFees(
             req.tokenAddress,
             req.tokenAmount,
             req.developerFeeRecipient,
@@ -204,7 +204,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         );
 
         if (_isNativeToken(req.tokenAddress)) {
-            uint256 sendValue = msg.value - totalFeeAmount;
+            uint256 sendValue = msg.value - protocolFee - developerFee; // subtract total fee amount from sent value
 
             if (sendValue < req.tokenAmount) {
                 revert UniversalBridgeMismatchedValue(req.tokenAmount, sendValue);
@@ -320,13 +320,12 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 tokenAmount,
         address developerFeeRecipient,
         uint256 developerFeeBps
-    ) private returns (uint256, uint256, uint256) {
+    ) private returns (uint256, uint256) {
         address protocolFeeRecipient = _universalBridgeStorage().protocolFeeRecipient;
         uint256 protocolFeeBps = _universalBridgeStorage().protocolFeeBps;
 
         uint256 protocolFee = (tokenAmount * protocolFeeBps) / 10_000;
         uint256 developerFee = (tokenAmount * developerFeeBps) / 10_000;
-        uint256 totalFeeAmount = protocolFee + developerFee;
 
         if (_isNativeToken(tokenAddress)) {
             if (protocolFee != 0) {
@@ -346,7 +345,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             }
         }
 
-        return (totalFeeAmount, protocolFee, developerFee);
+        return (protocolFee, developerFee);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
