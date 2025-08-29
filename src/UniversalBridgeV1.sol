@@ -196,7 +196,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 contractEthBalanceBefore = address(this).balance - msg.value;
 
         // distribute fees
-        (uint256 totalFeeAmount, uint256 protocolFee, uint256 developerFee) = _distributeFees(
+        (uint256 totalFeeAmount, uint256 protocolFee) = _distributeFees(
             req.tokenAddress,
             req.tokenAmount,
             req.developerFeeRecipient,
@@ -253,7 +253,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             req.tokenAmount,
             req.developerFeeRecipient,
             req.developerFeeBps,
-            developerFee,
+            totalFeeAmount - protocolFee,
             protocolFee,
             req.extraData
         );
@@ -320,7 +320,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 tokenAmount,
         address developerFeeRecipient,
         uint256 developerFeeBps
-    ) private returns (uint256, uint256, uint256) {
+    ) private returns (uint256, uint256) {
         address protocolFeeRecipient = _universalBridgeStorage().protocolFeeRecipient;
         uint256 protocolFeeBps = _universalBridgeStorage().protocolFeeBps;
 
@@ -346,7 +346,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             }
         }
 
-        return (totalFeeAmount, protocolFee, developerFee);
+        return (totalFeeAmount, protocolFee);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
