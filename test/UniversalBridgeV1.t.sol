@@ -20,10 +20,10 @@ contract UniversalBridgeTest is Test {
         bytes32 indexed transactionId,
         address tokenAddress,
         uint256 tokenAmount,
+        uint256 protocolFee,
         address developerFeeRecipient,
         uint256 developerFeeBps,
         uint256 developerFee,
-        uint256 protocolFee,
         bytes extraData
     );
 
@@ -73,9 +73,7 @@ contract UniversalBridgeTest is Test {
 
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
-        bridge = UniversalBridgeV1(
-            address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient, protocolFeeBps))
-        );
+        bridge = UniversalBridgeV1(address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient)));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -137,7 +135,7 @@ contract UniversalBridgeTest is Test {
                 req.tokenAmount,
                 req.forwardAddress,
                 req.spenderAddress,
-                req.expirationTimestamp,
+                req.protocolFeeBps,
                 req.developerFeeRecipient,
                 req.developerFeeBps,
                 keccak256(req.callData),
@@ -174,9 +172,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
         req.spenderAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -218,9 +216,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTargetNonSpender));
         req.spenderAddress = payable(address(mockSpender));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -260,9 +258,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(receiver));
         req.spenderAddress = payable(address(0));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -305,9 +303,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
         req.spenderAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -351,9 +349,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTargetNonSpender));
         req.spenderAddress = payable(address(mockSpender));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -391,9 +389,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(receiver));
         req.spenderAddress = payable(address(0));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -435,9 +433,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockTarget));
         req.spenderAddress = payable(address(mockTarget));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -454,10 +452,10 @@ contract UniversalBridgeTest is Test {
             _transactionId,
             address(mockERC20),
             sendValue,
+            expectedProtocolFee,
             developer,
             developerFeeBps,
             expectedDeveloperFee,
-            expectedProtocolFee,
             ""
         );
         bridge.initiateTransaction(req, _signature);
@@ -471,7 +469,6 @@ contract UniversalBridgeTest is Test {
         req.transactionId = _transactionId;
         req.tokenAddress = address(mockERC20);
         req.tokenAmount = 0;
-        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -497,9 +494,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(receiver));
         req.spenderAddress = payable(address(0));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -530,9 +527,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(receiver));
         req.spenderAddress = payable(address(0));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = "";
 
         // generate signature
@@ -553,7 +550,6 @@ contract UniversalBridgeTest is Test {
         bytes32 _transactionId = keccak256("transaction ID");
 
         req.transactionId = _transactionId;
-        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -576,7 +572,6 @@ contract UniversalBridgeTest is Test {
 
         req.transactionId = _transactionId;
         req.forwardAddress = payable(address(receiver));
-        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -600,7 +595,6 @@ contract UniversalBridgeTest is Test {
         req.transactionId = _transactionId;
         req.tokenAddress = address(mockERC20);
         req.forwardAddress = payable(address(receiver));
-        req.expirationTimestamp = 1000;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -640,9 +634,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockRefundTarget));
         req.spenderAddress = payable(address(mockRefundTarget));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -684,7 +678,6 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
-
         // create transaction request
         UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("erc20 refund transaction ID");
@@ -694,9 +687,9 @@ contract UniversalBridgeTest is Test {
         req.tokenAmount = sendValue;
         req.forwardAddress = payable(address(mockRefundTarget));
         req.spenderAddress = payable(address(mockRefundTarget));
-        req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
