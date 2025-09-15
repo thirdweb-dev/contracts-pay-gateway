@@ -53,6 +53,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         uint256 tokenAmount;
         address payable forwardAddress;
         address payable spenderAddress;
+        uint256 expirationTimestamp;
         uint256 protocolFeeBps;
         address payable developerFeeRecipient;
         uint256 developerFeeBps;
@@ -62,7 +63,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
 
     bytes32 private constant TRANSACTION_REQUEST_TYPEHASH =
         keccak256(
-            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 protocolFeeBps,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
+            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,uint256 protocolFeeBps,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
         );
 
     /*///////////////////////////////////////////////////////////////
@@ -95,6 +96,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
     error UniversalBridgeRestrictedAddress(); // 0xec7d39b3
     error UniversalBridgeVerificationFailed(); // 0x1573f645
     error UniversalBridgeTransactionAlreadyProcessed(); // 0x7d21ae4b
+    error UniversalBridgeRequestExpired(uint256 expirationTimestamp); // 0xb4ebecd8
 
     constructor() {
         _disableInitializers();
@@ -278,6 +280,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         TransactionRequest calldata req,
         bytes calldata signature
     ) private view returns (bool) {
+        if (req.expirationTimestamp < block.timestamp) {
+            revert UniversalBridgeRequestExpired(req.expirationTimestamp);
+        }
+
         bool processed = _universalBridgeStorage().processed[req.transactionId];
 
         if (processed) {
@@ -285,18 +291,20 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         }
 
         bytes32 structHash = keccak256(
-            abi.encode(
-                TRANSACTION_REQUEST_TYPEHASH,
-                req.transactionId,
-                req.tokenAddress,
-                req.tokenAmount,
-                req.forwardAddress,
-                req.spenderAddress,
-                req.protocolFeeBps,
-                req.developerFeeRecipient,
-                req.developerFeeBps,
-                keccak256(req.callData),
-                keccak256(req.extraData)
+            bytes.concat(
+                abi.encode(
+                    TRANSACTION_REQUEST_TYPEHASH,
+                    req.transactionId,
+                    req.tokenAddress,
+                    req.tokenAmount,
+                    req.forwardAddress,
+                    req.spenderAddress,
+                    req.expirationTimestamp,
+                    req.protocolFeeBps,
+                    req.developerFeeRecipient,
+                    req.developerFeeBps
+                ),
+                abi.encode(keccak256(req.callData), keccak256(req.extraData))
             )
         );
 
