@@ -22,8 +22,6 @@ library UniversalBridgeStorage {
         mapping(bytes32 => bool) processed;
         /// @dev Mapping from forward address or token address => whether restricted.
         mapping(address => bool) isRestricted;
-        /// @dev protocol fee bps, capped at 300 bps (3%)
-        uint256 protocolFeeBps;
         /// @dev protocol fee recipient address
         address protocolFeeRecipient;
         /// @dev whether the bridge is paused
@@ -56,6 +54,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         address payable forwardAddress;
         address payable spenderAddress;
         uint256 expirationTimestamp;
+        uint256 protocolFeeBps;
         address payable developerFeeRecipient;
         uint256 developerFeeBps;
         bytes callData;
@@ -64,7 +63,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
 
     bytes32 private constant TRANSACTION_REQUEST_TYPEHASH =
         keccak256(
-            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
+            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,uint256 protocolFeeBps,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
         );
 
     /*///////////////////////////////////////////////////////////////
@@ -76,10 +75,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         bytes32 indexed transactionId,
         address tokenAddress,
         uint256 tokenAmount,
+        uint256 protocolFee,
         address developerFeeRecipient,
         uint256 developerFeeBps,
         uint256 developerFee,
-        uint256 protocolFee,
         bytes extraData
     );
 
@@ -96,22 +95,17 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
     error UniversalBridgePaused(); // 0x46ecd2c9
     error UniversalBridgeRestrictedAddress(); // 0xec7d39b3
     error UniversalBridgeVerificationFailed(); // 0x1573f645
-    error UniversalBridgeRequestExpired(uint256 expirationTimestamp); // 0xb4ebecd8
     error UniversalBridgeTransactionAlreadyProcessed(); // 0x7d21ae4b
+    error UniversalBridgeRequestExpired(uint256 expirationTimestamp); // 0xb4ebecd8
 
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(
-        address _owner,
-        address _operator,
-        address payable _protocolFeeRecipient,
-        uint256 _protocolFeeBps
-    ) external initializer {
+    function initialize(address _owner, address _operator, address payable _protocolFeeRecipient) external initializer {
         _initializeOwner(_owner);
         _grantRoles(_operator, _OPERATOR_ROLE);
-        _setProtocolFeeInfo(_protocolFeeRecipient, _protocolFeeBps);
+        _setProtocolFeeInfo(_protocolFeeRecipient);
     }
 
     /*///////////////////////////////////////////////////////////////
@@ -136,8 +130,8 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         }
     }
 
-    function setProtocolFeeInfo(address payable feeRecipient, uint256 feeBps) external onlyOwner {
-        _setProtocolFeeInfo(feeRecipient, feeBps);
+    function setProtocolFeeInfo(address payable feeRecipient) external onlyOwner {
+        _setProtocolFeeInfo(feeRecipient);
     }
 
     function pause(bool _pause) external onlyOwner {
@@ -148,9 +142,8 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         _universalBridgeStorage().isRestricted[_target] = _restrict;
     }
 
-    function getProtocolFeeInfo() external view returns (address feeRecipient, uint256 feeBps) {
+    function getProtocolFeeInfo() external view returns (address feeRecipient) {
         feeRecipient = _universalBridgeStorage().protocolFeeRecipient;
-        feeBps = _universalBridgeStorage().protocolFeeBps;
     }
 
     function isPaused() external view returns (bool) {
@@ -188,6 +181,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             revert UniversalBridgeRestrictedAddress();
         }
 
+        if (req.protocolFeeBps > MAX_PROTOCOL_FEE_BPS) {
+            revert UniversalBridgeInvalidFeeBps();
+        }
+
         // verify amount
         if (req.tokenAmount == 0) {
             revert UniversalBridgeInvalidAmount(req.tokenAmount);
@@ -200,7 +197,8 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             req.tokenAddress,
             req.tokenAmount,
             req.developerFeeRecipient,
-            req.developerFeeBps
+            req.developerFeeBps,
+            req.protocolFeeBps
         );
 
         if (_isNativeToken(req.tokenAddress)) {
@@ -251,10 +249,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
             req.transactionId,
             req.tokenAddress,
             req.tokenAmount,
+            protocolFee,
             req.developerFeeRecipient,
             req.developerFeeBps,
             developerFee,
-            protocolFee,
             req.extraData
         );
     }
@@ -293,18 +291,20 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         }
 
         bytes32 structHash = keccak256(
-            abi.encode(
-                TRANSACTION_REQUEST_TYPEHASH,
-                req.transactionId,
-                req.tokenAddress,
-                req.tokenAmount,
-                req.forwardAddress,
-                req.spenderAddress,
-                req.expirationTimestamp,
-                req.developerFeeRecipient,
-                req.developerFeeBps,
-                keccak256(req.callData),
-                keccak256(req.extraData)
+            bytes.concat(
+                abi.encode(
+                    TRANSACTION_REQUEST_TYPEHASH,
+                    req.transactionId,
+                    req.tokenAddress,
+                    req.tokenAmount,
+                    req.forwardAddress,
+                    req.spenderAddress,
+                    req.expirationTimestamp,
+                    req.protocolFeeBps,
+                    req.developerFeeRecipient,
+                    req.developerFeeBps
+                ),
+                abi.encode(keccak256(req.callData), keccak256(req.extraData))
             )
         );
 
@@ -319,10 +319,10 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         address tokenAddress,
         uint256 tokenAmount,
         address developerFeeRecipient,
-        uint256 developerFeeBps
+        uint256 developerFeeBps,
+        uint256 protocolFeeBps
     ) private returns (uint256, uint256) {
         address protocolFeeRecipient = _universalBridgeStorage().protocolFeeRecipient;
-        uint256 protocolFeeBps = _universalBridgeStorage().protocolFeeBps;
 
         uint256 protocolFee = (tokenAmount * protocolFeeBps) / 10_000;
         uint256 developerFee = (tokenAmount * developerFeeBps) / 10_000;
@@ -353,17 +353,12 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         version = "1";
     }
 
-    function _setProtocolFeeInfo(address payable feeRecipient, uint256 feeBps) internal {
+    function _setProtocolFeeInfo(address payable feeRecipient) internal {
         if (feeRecipient == address(0)) {
             revert UniversalBridgeZeroAddress();
         }
 
-        if (feeBps > MAX_PROTOCOL_FEE_BPS) {
-            revert UniversalBridgeInvalidFeeBps();
-        }
-
         _universalBridgeStorage().protocolFeeRecipient = feeRecipient;
-        _universalBridgeStorage().protocolFeeBps = feeBps;
     }
 
     function _isNativeToken(address tokenAddress) private pure returns (bool) {
@@ -372,7 +367,7 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    function _universalBridgeStorage() internal view returns (UniversalBridgeStorage.Data storage) {
+    function _universalBridgeStorage() internal pure returns (UniversalBridgeStorage.Data storage) {
         return UniversalBridgeStorage.data();
     }
 }

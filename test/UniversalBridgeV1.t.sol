@@ -20,10 +20,10 @@ contract UniversalBridgeTest is Test {
         bytes32 indexed transactionId,
         address tokenAddress,
         uint256 tokenAmount,
+        uint256 protocolFee,
         address developerFeeRecipient,
         uint256 developerFeeBps,
         uint256 developerFee,
-        uint256 protocolFee,
         bytes extraData
     );
 
@@ -73,9 +73,7 @@ contract UniversalBridgeTest is Test {
 
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
-        bridge = UniversalBridgeV1(
-            address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient, protocolFeeBps))
-        );
+        bridge = UniversalBridgeV1(address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient)));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -89,7 +87,7 @@ contract UniversalBridgeTest is Test {
 
         // EIP712
         typehashTransactionRequest = keccak256(
-            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
+            "TransactionRequest(bytes32 transactionId,address tokenAddress,uint256 tokenAmount,address forwardAddress,address spenderAddress,uint256 expirationTimestamp,uint256 protocolFeeBps,address developerFeeRecipient,uint256 developerFeeBps,bytes callData,bytes extraData)"
         );
         nameHash = keccak256(bytes("UniversalBridgeV1"));
         versionHash = keccak256(bytes("1"));
@@ -138,6 +136,7 @@ contract UniversalBridgeTest is Test {
                 req.forwardAddress,
                 req.spenderAddress,
                 req.expirationTimestamp,
+                req.protocolFeeBps,
                 req.developerFeeRecipient,
                 req.developerFeeBps,
                 keccak256(req.callData),
@@ -177,6 +176,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -221,6 +221,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -263,6 +264,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
 
         // generate signature
         bytes memory _signature = _prepareAndSignData(
@@ -308,6 +310,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -354,6 +357,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -394,6 +398,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -438,6 +443,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -454,10 +460,10 @@ contract UniversalBridgeTest is Test {
             _transactionId,
             address(mockERC20),
             sendValue,
+            expectedProtocolFee,
             developer,
             developerFeeBps,
             expectedDeveloperFee,
-            expectedProtocolFee,
             ""
         );
         bridge.initiateTransaction(req, _signature);
@@ -500,6 +506,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -533,6 +540,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = "";
 
         // generate signature
@@ -643,6 +651,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
@@ -684,7 +693,6 @@ contract UniversalBridgeTest is Test {
         vm.prank(sender);
         mockERC20.approve(address(bridge), sendValueWithFees);
 
-
         // create transaction request
         UniversalBridgeV1.TransactionRequest memory req;
         bytes32 _transactionId = keccak256("erc20 refund transaction ID");
@@ -697,6 +705,7 @@ contract UniversalBridgeTest is Test {
         req.expirationTimestamp = 1000;
         req.developerFeeRecipient = developer;
         req.developerFeeBps = developerFeeBps;
+        req.protocolFeeBps = protocolFeeBps;
         req.callData = targetCalldata;
 
         // generate signature
