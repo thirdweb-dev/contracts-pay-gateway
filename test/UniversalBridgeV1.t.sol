@@ -153,6 +153,18 @@ contract UniversalBridgeTest is Test {
         }
     }
 
+    function test_receive() public {
+        bytes32 salt = bytes32("salt");
+        address impl = address(new UniversalBridgeV1());
+        address proxy = LibClone.deployDeterministicERC1967(impl, salt);
+
+        // send eth
+        (bool success, ) = proxy.call{value: 12 ether}("");
+        
+        assertTrue(success);
+        assertEq(proxy.balance, 12 ether);
+    }
+
     /*///////////////////////////////////////////////////////////////
                     Test `initiateTransaction`
     //////////////////////////////////////////////////////////////*/
