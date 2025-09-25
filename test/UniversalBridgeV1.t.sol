@@ -73,7 +73,7 @@ contract UniversalBridgeTest is Test {
 
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
-        bridge = UniversalBridgeV1(address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient)));
+        bridge = UniversalBridgeV1(payable(address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient))));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
