@@ -10,7 +10,7 @@ contract UniversalBridgeProxy {
     bytes32 private constant _ERC1967_IMPLEMENTATION_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
-    constructor(address _implementation, address _owner, address _operator, address payable _protocolFeeRecipient) {
+    constructor(address _implementation, address _owner, address[] memory _operators, address payable _protocolFeeRecipient) {
         if (_implementation == address(0)) {
             revert ImplementationZeroAddress();
         }
@@ -28,9 +28,9 @@ contract UniversalBridgeProxy {
         }
 
         bytes memory data = abi.encodeWithSignature(
-            "initialize(address,address,address)",
+            "initialize(address,address[],address)",
             _owner,
-            _operator,
+            _operators,
             _protocolFeeRecipient
         );
         (bool success, ) = _implementation.delegatecall(data);

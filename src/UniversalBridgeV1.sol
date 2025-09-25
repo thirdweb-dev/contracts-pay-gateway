@@ -102,9 +102,15 @@ contract UniversalBridgeV1 is EIP712, Initializable, UUPSUpgradeable, OwnableRol
         _disableInitializers();
     }
 
-    function initialize(address _owner, address _operator, address payable _protocolFeeRecipient) external initializer {
+    receive() external payable onlyProxy {}
+
+    function initialize(address _owner, address[] memory _operators, address payable _protocolFeeRecipient) external initializer {
         _initializeOwner(_owner);
-        _grantRoles(_operator, _OPERATOR_ROLE);
+
+        for(uint256 i = 0; i < _operators.length; i++) {
+            _grantRoles(_operators[i], _OPERATOR_ROLE);
+        }
+
         _setProtocolFeeInfo(_protocolFeeRecipient);
     }
 

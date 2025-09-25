@@ -73,7 +73,9 @@ contract UniversalBridgeTest is Test {
 
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
-        bridge = UniversalBridgeV1(address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient)));
+        address[] memory operators = new address[](1);
+        operators[0] = operator;
+        bridge = UniversalBridgeV1(payable(address(new UniversalBridgeProxy(impl, owner, operators, protocolFeeRecipient))));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
@@ -151,6 +153,18 @@ contract UniversalBridgeTest is Test {
 
             signature = abi.encodePacked(r, s, v);
         }
+    }
+
+    function test_receive() public {
+        bytes32 salt = bytes32("salt");
+        address impl = address(new UniversalBridgeV1());
+        address proxy = LibClone.deployDeterministicERC1967(address(0x9), salt);
+
+        // send eth
+        (bool success, ) = proxy.call{value: 12 ether}("");
+        
+        assertTrue(success);
+        assertEq(proxy.balance, 12 ether);
     }
 
     /*///////////////////////////////////////////////////////////////
