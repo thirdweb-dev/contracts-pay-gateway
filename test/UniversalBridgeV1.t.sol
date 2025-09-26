@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import { Test, console } from "forge-std/Test.sol";
 
 import { UniversalBridgeV1 } from "src/UniversalBridgeV1.sol";
-import { UniversalBridgeProxy } from "src/UniversalBridgeProxy.sol";
 import { IModuleConfig } from "lib/modular-contracts/src/interface/IModuleConfig.sol";
 import { IModularCore } from "lib/modular-contracts/src/interface/IModularCore.sol";
 import { LibClone } from "lib/solady/src/utils/LibClone.sol";
@@ -73,7 +72,14 @@ contract UniversalBridgeTest is Test {
 
         // deploy impl and proxy
         address impl = address(new UniversalBridgeV1());
-        bridge = UniversalBridgeV1(payable(address(new UniversalBridgeProxy(impl, owner, operator, protocolFeeRecipient))));
+        address[] memory operators = new address[](1);
+        operators[0] = operator;
+
+        bytes memory initData = abi.encodeWithSelector(UniversalBridgeV1.initialize.selector, owner, operators, protocolFeeRecipient);
+        bridge = UniversalBridgeV1(payable(LibClone.deployERC1967(impl)));
+        bridge.initialize(owner, operators, protocolFeeRecipient);
+
+        // bridge = UniversalBridgeV1(payable(address(new UniversalBridgeProxy(impl, owner, operators, protocolFeeRecipient))));
 
         mockERC20 = new MockERC20("Token", "TKN");
         mockTarget = new MockTarget();
